@@ -27,13 +27,23 @@ from camisole.utils import parse_size, parse_float
 def lscpu():
     out = subprocess.check_output(['lscpu'])
     out = out.decode().strip().split('\n')
-    return {k: v.strip() for line in out for k, v in (line.split(':', 1),)}
+
+    return {
+            k: v.strip() 
+                for line in out 
+                    for k, v in (line.split(':', 1),)
+        }
 
 
 def meminfo():
     with open('/proc/meminfo') as f:
         out = f.read().strip().split('\n')
-    return {k: v.strip() for line in out for k, v in (line.split(':', 1),)}
+
+    return {
+            k: v.strip()
+                for line in out
+                    for k, v in (line.split(':', 1),)
+        }
 
 
 # This function only gives static system information so we can cache it
@@ -43,6 +53,7 @@ def info():
     uname = os.uname()
     cpu = lscpu()
     mem = meminfo()
+
     return {
         'arch': uname.machine,
         'byte_order': sys.byteorder,

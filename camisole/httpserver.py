@@ -22,22 +22,30 @@ class BinaryJsonEncoder(json.JSONEncoder):
         if isinstance(o, bytes):
             try:
                 return o.decode()
+
             except UnicodeDecodeError:
                 raise TypeError() from None
+
         return super().default(o)
 
 
 def json_msgpack_handler(wrapped):
     @functools.wraps(wrapped)
     async def wrapper(request):
-        accepted_types = list(AcceptHeader.get_best_accepted_types(
-            request.headers.getone('accept', '*/*'), CONTENT_TYPES))
+        accepted_types = list(
+            AcceptHeader.get_best_accepted_types(
+                request.headers.getone('accept', '*/*'), CONTENT_TYPES
+            )
+        )
+        
         content_type = request.headers.getone('content-type', TYPE_JSON)
 
         def encoder_for(content_type):
             if content_type == TYPE_JSON:
-                return lambda e: json.dumps(
-                    e, cls=BinaryJsonEncoder, sort_keys=True).encode()
+                return lambda e: \
+                    json.dumps(
+                        e, cls=BinaryJsonEncoder, sort_keys=True
+                    ).encode()
             elif content_type == TYPE_MSGPACK:
                 return functools.partial(msgpack.dumps, use_bin_type=True)
 
@@ -47,15 +55,18 @@ def json_msgpack_handler(wrapped):
                     data = encoder_for(content_type)(payload)
                 except Exception:
                     continue
+
                 return aiohttp.web.Response(status=code, body=data,
                                             content_type=content_type)
             # no acceptable content type
             code = aiohttp.web.HTTPNotAcceptable.status_code
             if TYPE_MSGPACK not in accepted_types:
                 # explain how to work around the issue
-                return error(code,
-                             f"use 'Accept: {TYPE_MSGPACK}' to be able to "
-                             f"receive binary payloads")
+                return error(
+                        code,
+                        f"use 'Accept: {TYPE_MSGPACK}' to be able to "
+                        f"receive binary payloads"
+                    )
             # no encoder can work
             return aiohttp.web.Response(status=code)
 
@@ -74,23 +85,26 @@ def json_msgpack_handler(wrapped):
             return error(e.status_code, str(e))
         except Exception:  # noqa
             return error(
-                aiohttp.web.HTTPInternalServerError.status_code,
-                traceback.format_exc())
+                    aiohttp.web.HTTPInternalServerError.status_code,
+                    traceback.format_exc()
+                )
 
         try:
             data = decoder(data) if data else {}
         except Exception:
             return error(
-                aiohttp.web.HTTPBadRequest.status_code,
-                f"malformed {content_type}")
+                    aiohttp.web.HTTPBadRequest.status_code,
+                    f"malformed {content_type}"
+                )
 
         try:
             # actually execute handler
             result = await wrapped(request, data)
         except Exception:  # noqa
             return error(
-                aiohttp.web.HTTPInternalServerError.status_code,
-                traceback.format_exc())
+                    aiohttp.web.HTTPInternalServerError.status_code,
+                    traceback.format_exc()
+                )
 
         return response({'success': True, **result})
 
@@ -118,9 +132,12 @@ async def test_handler(request, data):
     langs = camisole.languages.all().keys()
     langs -= set(data.get('exclude', []))
 
-    results = {name: {'success': success, 'raw': raw}
-               for name in langs
-               for success, raw in [await camisole.ref.test(name)]}
+    results = {
+                name: {'success': success, 'raw': raw}
+                    for name in langs
+                    for success, raw in [await camisole.ref.test(name)]
+            }
+
     return {'results': results}
 
 
@@ -131,26 +148,34 @@ async def system_handler(request, data):
 
 @json_msgpack_handler
 async def languages_handler(request, data):
-    return {'languages': {lang: {'name': cls.name, 'programs': cls.programs()}
-                          for lang, cls in camisole.languages.all().items()}}
+    return {
+        'languages': {
+            lang: { 'name': cls.name, 'programs': cls.programs() }
+                for lang, cls in camisole.languages.all().items()
+            }
+        }
 
 
 async def default_handler(request):
     return aiohttp.web.Response(
-        text="Welcome to Camisole. Use the /run endpoint to run some code!\n")
+            text="Welcome to Camisole. Use the /run endpoint to run some code!\n"
+        )
 
 
 def make_application(**kwargs):
     app = aiohttp.web.Application(**kwargs)
+
     app.router.add_route('POST', '/run', run_handler)
     app.router.add_route('*', '/', default_handler)
     app.router.add_route('*', '/languages', languages_handler)
     app.router.add_route('*', '/system', system_handler)
     app.router.add_route('*', '/test', test_handler)
+
     return app
 
 
 def run(**kwargs):  # noqa
     from camisole.conf import conf
+
     app = make_application(client_max_size=conf['max-body-size'])
     aiohttp.web.run_app(app, **kwargs)

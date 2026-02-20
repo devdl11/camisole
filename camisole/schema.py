@@ -108,6 +108,7 @@ ISOLATE_OPTS_PROPERTIES = {
 
 EXECUTE_PROPERTIES = {
     'stdin': O(str_bytes),
+    'judge': O(bool),
     **ISOLATE_OPTS_PROPERTIES,
 }
 

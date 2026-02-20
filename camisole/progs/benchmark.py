@@ -7,19 +7,27 @@ from camisole import ref
 def format_bar(mi, ma, a, b, v,
                width=80, mark='\N{FULL BLOCK}', opaque='\N{MEDIUM SHADE}',
                empty='\N{LIGHT SHADE}'):
+    
     f = (ma - mi) // width
-    half_opaque = ((b - a) // 2 // f)
-    return (empty * ((a - mi) // f)
+
+    half_opaque = (
+        (b - a) // 2 // f
+    )
+    
+    return (
+        empty * ((a - mi) // f)
             + opaque * half_opaque
             + mark
             + opaque * half_opaque
-            + empty * ((ma - b) // f))
+            + empty * ((ma - b) // f)
+        )
 
 
 def format_stats(series, d, f=0):
     mean = statistics.mean(series)
     med = statistics.median(series)
     std = statistics.stdev(series)
+
     return f"x {mean:{d}.{f}f}  μ {med:{d}.{f}f}  σ² {std:{d}.{f}f}"
 
 
@@ -33,8 +41,10 @@ async def benchmark(lang_name, verbose):
         memory = (a + b) // 2
         limits = {'mem': memory, 'cg-mem': memory,
                   'wall-time': 2, 'time': 1, 'extra-time': .2}
+
         ok, result = await ref.test(lang_name, execute=limits)
         meta = result['tests'][0]['meta']
+
         if verbose:
             bar = format_bar(min, max, a, b, memory)
             print(f" {lang_name:>10s} {memory:>7d} {bar}", end="\r")
@@ -62,11 +72,13 @@ def handle(args):
                 for lang in sorted(all())]
 
     rows = asyncio.get_event_loop().run_until_complete(execute())
+
     headers = ("Language",
                "Memory (kB)",
                "Max RSS (kB)",
                "Time (s)",
                "Wall time (s)")
+
     print("\n".join(tabulate(rows, headers=headers, align='<><<<')))
     return 0
 

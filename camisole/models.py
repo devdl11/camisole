@@ -33,13 +33,18 @@ from camisole.conf import conf
 
 
 class Program:
-    def __init__(self, cmd, *, opts=None, env=None,
+    def __init__(self, cmd, *, 
+                 opts=None, env=None,
                  version_opt='--version', version_lines=1,
-                 version_regex=r'[0-9]+(\.[0-9]+)+'):
+                 version_regex=r'[0-9]+(\.[0-9]+)+'
+                 ):
+
         self.cmd = camisole.utils.which(cmd)
         self.cmd_name = cmd
+
         self.opts = opts or []
         self.env = env or {}
+
         self.version_opt = version_opt
         self.version_lines = version_lines
         self.version_regex = re.compile(version_regex)
@@ -49,28 +54,39 @@ class Program:
         if self.version_opt is None:  # noqa
             return None
         proc = subprocess.run([self.cmd, self.version_opt],
-                              stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            stderr=subprocess.STDOUT, stdout=subprocess.PIPE
+        )
+
         return proc.stdout.decode().strip()
 
     def version(self):
         if self.version_opt is None:  # noqa
             return None
+
         res = self.version_regex.search(self._version())
+
         return res.group(0) if res else None
 
     def long_version(self):
         if self.version_opt is None:
             return None
-        return '\n'.join(self._version().split('\n')[:self.version_lines])
+
+        return '\n'.join(
+                self._version().split('\n')[:self.version_lines]
+            )
 
 
 class MetaLang(type):
     """Metaclass to customize Lang subclasses __repr__()"""
 
     def __repr__(self):
-        return "<{realname}{name}>".format(
-            realname=self.__name__,
-            name=f' “{self.name}”' if self.__name__ != self.name else '')
+        return "<{realname}{name}>"\
+            .format(
+                realname=self.__name__,
+                name=f' “{self.name}”' 
+                    if self.__name__ != self.name 
+                    else ''
+                )
 
 
 class Lang(metaclass=MetaLang):
@@ -121,8 +137,10 @@ class Lang(metaclass=MetaLang):
     def required_binaries(cls):
         if cls.compiler:
             yield cls.compiler
+
         if cls.interpreter:
             yield cls.interpreter
+
         yield from cls.extra_binaries.values()
 
     @classmethod
@@ -142,16 +160,21 @@ class Lang(metaclass=MetaLang):
         isolator = camisole.isolate.Isolator(
             self.opts.get('compile', {}),
             allowed_dirs=self.get_allowed_dirs() + tmparg)
+
         async with isolator:
             wd = Path(isolator.path)
             env = {'HOME': self.filter_box_prefix(str(wd))}
             source = wd / self.source_filename()
             compiled = wd / self.execute_filename()
+
             with source.open('wb') as sourcefile:
                 sourcefile.write(
                     camisole.utils.force_bytes(self.opts.get('source', '')))
+
             cmd = self.compile_command(str(source), str(compiled))
+
             await isolator.run(cmd, env={**env, **self.compiler.env})
+
             binary = self.read_compiled(str(compiled), isolator)
 
         root_tmp.cleanup()
@@ -161,41 +184,53 @@ class Lang(metaclass=MetaLang):
     async def execute(self, binary, opts=None):
         if opts is None:
             opts = {}
+
         opts = {**self.opts.get('execute', {}), **opts}
         input_data = None
+
         if 'stdin' in opts and opts['stdin']:
             input_data = camisole.utils.force_bytes(opts['stdin'])
 
         isolator = camisole.isolate.Isolator(
             opts, allowed_dirs=self.get_allowed_dirs())
+
         async with isolator:
             wd = isolator.path
             env = {'HOME': self.filter_box_prefix(str(wd))}
             compiled = self.write_binary(Path(wd), binary)
+
             env = {**env, **(self.interpreter.env if self.interpreter else {})}
+
             await isolator.run(self.execute_command(str(compiled)),
-                               env=env, data=input_data)
+                               env=env, data=input_data
+                            )
+
         return (isolator.isolate_retcode, isolator.info)
 
     async def run_compilation(self, result):
         if self.compiler is not None:
             cretcode, info, binary = await self.compile()
             result['compile'] = info
+
             if cretcode != 0:
                 return
             if binary is None:
                 if result['compile']['stderr'].strip():
                     result['compile']['stderr'] += b'\n\n'
+
                 result['compile']['stderr'] += b'Cannot find result binary.\n'
                 return
         else:
             binary = camisole.utils.force_bytes(self.opts.get('source', ''))
+
         return binary
 
     async def run_tests(self, binary, result):
         tests = self.opts.get('tests', [{}])
+
         if tests:
             result['tests'] = [{}] * len(tests)
+
         for i, test in enumerate(tests):
             retcode, info = await self.execute(binary, test)
             result['tests'][i] = {
@@ -205,21 +240,26 @@ class Lang(metaclass=MetaLang):
 
             if retcode != 0 and (
                     test.get('fatal', False) or
-                    self.opts.get('all_fatal', False)):
+                    self.opts.get('all_fatal', False)
+                ):
                 break
 
     async def run(self):
         result = {}
         binary = await self.run_compilation(result)
+
         if not binary:
             return result
+
         await self.run_tests(binary, result)
+    
         return result
 
     def get_allowed_dirs(self):
         allowed_dirs = []
         allowed_dirs += self.allowed_dirs
         allowed_dirs += conf['allowed-dirs']
+    
         return list(camisole.utils.uniquify(allowed_dirs))
 
     def compile_opt_out(self, output):
@@ -234,8 +274,10 @@ class Lang(metaclass=MetaLang):
 
     def write_binary(self, path, binary):
         compiled = path / self.execute_filename()
+        
         with compiled.open('wb') as c:
             c.write(binary)
+
         compiled.chmod(0o700)
         return compiled
 
@@ -255,15 +297,20 @@ class Lang(metaclass=MetaLang):
     def compile_command(self, source, output):
         if self.compiler is None:
             return None
-        return [self.compiler.cmd,
+
+        return [
+                self.compiler.cmd,
                 *self.compiler.opts,
                 *self.compile_opt_out(self.filter_box_prefix(output)),
-                self.filter_box_prefix(source)]
+                self.filter_box_prefix(source)
+            ]
 
     def execute_command(self, output):
         cmd = []
+    
         if self.interpreter is not None:
             cmd += [self.interpreter.cmd] + self.interpreter.opts
+
         return cmd + [self.filter_box_prefix(output)]
 
 
@@ -280,24 +327,32 @@ class PipelineLang(Lang, register=False):
     @classmethod
     def required_binaries(cls):
         yield from super().required_binaries()
+
         for sub in cls.sub_langs:
             yield from sub.required_binaries()
 
     async def run_compilation(self, result):
         source = camisole.utils.force_bytes(self.opts.get('source', ''))
-        for i, lang_cls in enumerate(self.sub_langs):
+
+        for _, lang_cls in enumerate(self.sub_langs):
             lang = lang_cls({**self.opts, 'source': source})
+
             cretcode, info, binary = await lang.compile()
             result['compile'] = info
+
             if cretcode != 0:
                 return
+
             if binary is None:
                 if result['compile']['stderr'].strip():
                     result['compile']['stderr'] += b'\n\n'
+
                 result['compile']['stderr'] += b'Cannot find result binary.\n'
                 return
+
             # compile output is next stage input
             source = binary
+
         return binary
 
     async def compile(self):

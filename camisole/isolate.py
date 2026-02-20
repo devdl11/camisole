@@ -41,11 +41,16 @@ def signal_message(signal: int) -> str:
 
 async def communicate(cmdline, data=None, **kwargs):
     logging.debug('Running %s', ' '.join(str(a) for a in cmdline))
+
     proc = await asyncio.create_subprocess_exec(
-        *cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, **kwargs)
+        *cmdline,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, **kwargs
+    )
+
     stdout, stderr = await proc.communicate(data)
     retcode = await proc.wait()
+
     return retcode, stdout, stderr
 
 
@@ -87,10 +92,13 @@ class IsolateInternalError(RuntimeError):
         self.isolate_stderr = isolate_stderr.decode(errors='replace').strip()
 
         message_list = [message]
+
         if self.isolate_stdout:
             message_list.append("Isolate output:\n    " + self.isolate_stdout)
+
         if self.isolate_stderr:
             message_list.append("Isolate error:\n    " + self.isolate_stderr)
+
         message_list.append("Command:\n    " + ' '.join(self.command))
 
         super().__init__('\n\n'.join(message_list))
@@ -121,22 +129,31 @@ class Isolator:
     async def __aenter__(self):
         busy = {int(p.name) for p in self.isolate_conf.root.iterdir()}
         avail = set(range(self.isolate_conf.max_boxes)) - busy
+
         while avail:
             self.box_id = avail.pop()
             self.cmd_base = ['isolate', '--box-id', str(self.box_id), '--cg']
+
             cmd_init = self.cmd_base + ['--init']
+
             retcode, stdout, stderr = await communicate(cmd_init)
+
             if retcode == 2 and b"already exists" in stderr:
                 continue
+
             if retcode != 0:  # noqa
-                raise RuntimeError("{} returned code {}: “{}”".format(
-                    cmd_init, retcode, stderr))
+                raise RuntimeError(
+                    "{} returned code {}: “{}”"
+                    .format(cmd_init, retcode, stderr)
+                )
             break
         else:
             raise RuntimeError("No isolate box ID available.")
+
         self.path = pathlib.Path(stdout.strip().decode()) / 'box'
         self.meta_file = tempfile.NamedTemporaryFile(prefix='camisole-meta-')
         self.meta_file.__enter__()
+
         return self
 
     async def __aexit__(self, exc, value, tb):
@@ -155,15 +172,27 @@ class Isolator:
             'time': 0.0,
             'time-wall': 0.0,
         }
+    
         with open(self.meta_file.name) as f:
             m = (line.strip() for line in f.readlines())
-        m = dict(line.split(':', 1) for line in m if line)
-        m = {k: (type(meta_defaults[k])(v)
-                 if meta_defaults[k] is not None else v)
-             for k, v in m.items()}
+
+        m = dict(
+            line.split(':', 1) for line in m if line
+        )
+
+        m = {
+            k: (
+                type(meta_defaults[k])(v) 
+                if meta_defaults[k] is not None 
+                else v
+            ) for k, v in m.items()
+        }
+
         if 'exitsig' in m:
             m['exitsig-message'] = signal_message(m['exitsig'])
+
         self.meta = {**meta_defaults, **m}
+
         verbose_status = {
             'OK': 'OK',
             'RE': 'RUNTIME_ERROR',
@@ -171,6 +200,7 @@ class Isolator:
             'SG': 'SIGNALED',
             'XX': 'INTERNAL_ERROR',
         }
+
         self.meta['status'] = verbose_status[self.meta['status']]
 
         if self.meta.get('cg-oom-killed'):
@@ -189,17 +219,22 @@ class Isolator:
 
         cmd_cleanup = self.cmd_base + ['--cleanup']
         retcode, stdout, stderr = await communicate(cmd_cleanup)
+
         if retcode != 0:  # noqa
-            raise RuntimeError("{} returned code {}: “{}”".format(
-                cmd_cleanup, retcode, stderr))
+            raise RuntimeError(
+                "{} returned code {}: “{}”"
+                .format(cmd_cleanup, retcode, stderr)
+            )
 
         self.meta_file.__exit__(exc, value, tb)
 
-    async def run(self, cmdline, data=None, env=None,
-                  merge_outputs=False, **kwargs):
+    async def run(self, cmdline, data=None, env=None, merge_outputs=False, **kwargs):
         cmd_run = self.cmd_base[:]
-        cmd_run += list(itertools.chain(
-            *[('-d', d) for d in self.allowed_dirs]))
+        cmd_run += list(
+                itertools.chain(
+                    *[('-d', d) for d in self.allowed_dirs]
+                )
+            )
 
         for opt in CAMISOLE_OPTIONS:
             v = self.opts.get(opt)
@@ -213,6 +248,7 @@ class Isolator:
 
         for e in ['PATH', 'LD_LIBRARY_PATH', 'LANG']:
             env_value = os.getenv(e)
+
             if env_value:
                 cmd_run += ['--env', e + '=' + env_value]
 
@@ -232,11 +268,14 @@ class Isolator:
         cmd_run += ['--run', '--']
         cmd_run += cmdline
 
-        self.isolate_retcode, self.isolate_stdout, self.isolate_stderr = (
-            await communicate(cmd_run, data=data, **kwargs))
+        self.isolate_retcode, self.isolate_stdout, self.isolate_stderr = \
+            (
+                await communicate(cmd_run, data=data, **kwargs)
+            )
 
         self.stdout = b''
         self.stderr = b''
+
         if self.isolate_retcode >= 2:  # Internal error
             raise IsolateInternalError(
                 cmd_run,
@@ -245,8 +284,10 @@ class Isolator:
             )
         try:
             self.stdout = (self.path / self.stdout_file).read_bytes()
+
             if not merge_outputs:
                 self.stderr = (self.path / self.stderr_file).read_bytes()
+
         except (IOError, PermissionError) as e:
             # Something went wrong, isolate was killed before changing the
             # permissions or unreadable stdout/stderr
@@ -264,11 +305,15 @@ class Isolator:
 
         def dummy_section():
             yield f'[{s}]'
+
             with pathlib.Path(conf['isolate-conf']).expanduser().open() as f:
                 yield from f
 
         parser.read_file(dummy_section())
         root = pathlib.Path(parser.get(s, 'box_root'))
         max_boxes = parser.getint(s, 'num_boxes')
-        return (collections.namedtuple('conf', 'root, max_boxes')
-                (root, max_boxes))
+
+        return (
+                collections.namedtuple('conf', 'root, max_boxes')
+                (root, max_boxes)
+            )

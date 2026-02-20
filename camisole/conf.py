@@ -21,15 +21,19 @@ class Conf(Mapping):
         # lazy loading of default config
         if Conf._instance is not None:
             return
+
         Conf._instance = self
 
         import pkg_resources
         default_conf = pkg_resources.resource_stream(
-            'camisole', DEFAULT_CONF_NAME)
+            'camisole', DEFAULT_CONF_NAME
+        )
+
         with default_conf:
             self.merge(yaml.safe_load(default_conf))
 
         conf_from_environ = os.environ.get('CAMISOLE_CONF')
+
         if conf_from_environ:  # noqa
             with open(conf_from_environ) as f:
                 self.merge(yaml.safe_load(f))
@@ -39,12 +43,15 @@ class Conf(Mapping):
 
         def merge(data, into):
             for k, v in data.items():
-                if (k in into and
+                if (
+                        k in into and
                         isinstance(v, dict) and
-                        isinstance(into[k], dict)):
+                        isinstance(into[k], dict)
+                    ):
                     merge(v, into[k])
                 else:
                     into[k] = v
+
         merge(data, self._data)
 
     def __getitem__(self, item):

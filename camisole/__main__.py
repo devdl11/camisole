@@ -13,21 +13,29 @@ from camisole.progs import languages, test, serve, benchmark
 
 def main():
     parser = argparse.ArgumentParser(
-        description="asyncio-based source compiler and test runner")
+            description="asyncio-based source compiler and test runner"
+        )
+
     parser.add_argument(
-        '-c',
-        '--conf',
-        type=argparse.FileType('r'),
-        help="custom yaml configuration file to use")
+            '-c',
+            '--conf',
+            type=argparse.FileType('r'),
+            help="custom yaml configuration file to use"
+        )
+
     parser.add_argument(
-        '-l',
-        '--logging',
-        choices=[l.lower() for l in logging._nameToLevel],
-        help="logging level (overrides root logger level from file conf)")
+            '-l',
+            '--logging',
+            choices=[l.lower() for l in logging._nameToLevel],
+            help="logging level (overrides root logger level from file conf)"
+        )
 
     cmd = parser.add_subparsers(dest='command')
-    commands = dict(getattr(module, 'build')(cmd)
-                    for module in (languages, test, serve, benchmark))
+    commands = dict(
+                    getattr(module, 'build')(cmd)
+                        for module in (languages, test, serve, benchmark)
+                )
+
     args = parser.parse_args()
 
     if args.conf:

@@ -16,13 +16,26 @@ def all() -> Mapping[str, Type[Lang]]:
 
 
 def by_name(name: str) -> Type[Lang]:
+    """ Returns Lang class object for a given language name (case-insensitive)
+
+    Args:
+        name (str): language name
+
+    Returns:
+        Type[Lang]: class object of the language
+    """
+
     return all()[name.lower()]
 
 
 def load_builtins():
     sys.path.extend(
-        str(Path(path).expanduser()) for path in conf.get('syspath', []))
+            str(Path(path).expanduser()) 
+                for path in conf.get('syspath', [])
+        )
+
     logger.debug("sys.path: %s", sys.path)
+
     for name in __all__:
         importlib.import_module(f'camisole.languages.{name}')
 
