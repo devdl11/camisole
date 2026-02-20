@@ -49,6 +49,9 @@ def json_msgpack_handler(wrapped):
             elif content_type == TYPE_MSGPACK:
                 return functools.partial(msgpack.dumps, use_bin_type=True)
 
+            raise RuntimeError(f"Unsupported content type {content_type!r}")
+
+
         def response(payload, code=200):
             for content_type in accepted_types:
                 try:
@@ -70,6 +73,7 @@ def json_msgpack_handler(wrapped):
             # no encoder can work
             return aiohttp.web.Response(status=code)
 
+
         def error(code, msg):
             return response({'success': False, 'error': msg}, code)
 
@@ -77,7 +81,8 @@ def json_msgpack_handler(wrapped):
             decoder = functools.partial(msgpack.loads, raw=False)
         else:
             content_type = TYPE_JSON
-            decoder = lambda e: json.loads(e.decode())
+            def decoder(e):
+                return json.loads(e.decode())
 
         try:
             data = await request.read()

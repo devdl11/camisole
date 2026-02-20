@@ -53,6 +53,7 @@ class Program:
     def _version(self):
         if self.version_opt is None:  # noqa
             return None
+
         proc = subprocess.run([self.cmd, self.version_opt],
             stderr=subprocess.STDOUT, stdout=subprocess.PIPE
         )
@@ -63,7 +64,11 @@ class Program:
         if self.version_opt is None:  # noqa
             return None
 
-        res = self.version_regex.search(self._version())
+        version_str = self._version()
+        if version_str is None:
+            return None
+
+        res = self.version_regex.search(version_str)
 
         return res.group(0) if res else None
 
@@ -71,8 +76,12 @@ class Program:
         if self.version_opt is None:
             return None
 
+        version_str = self.version()
+        if version_str is None:
+            return None
+
         return '\n'.join(
-                self._version().split('\n')[:self.version_lines]
+                version_str.split('\n')[:self.version_lines]
             )
 
 
@@ -143,6 +152,7 @@ class Lang(metaclass=MetaLang):
 
         yield from cls.extra_binaries.values()
 
+
     @classmethod
     def programs(cls):
         return {p.cmd_name: {'version': p.version(), 'opts': p.opts}
@@ -162,6 +172,8 @@ class Lang(metaclass=MetaLang):
             allowed_dirs=self.get_allowed_dirs() + tmparg)
 
         async with isolator:
+            assert isolator.path is not None
+
             wd = Path(isolator.path)
             env = {'HOME': self.filter_box_prefix(str(wd))}
             source = wd / self.source_filename()
@@ -181,6 +193,7 @@ class Lang(metaclass=MetaLang):
 
         return (isolator.isolate_retcode, isolator.info, binary)
 
+
     async def execute(self, binary, opts=None):
         if opts is None:
             opts = {}
@@ -195,6 +208,8 @@ class Lang(metaclass=MetaLang):
             opts, allowed_dirs=self.get_allowed_dirs())
 
         async with isolator:
+            assert isolator.path is not None
+
             wd = isolator.path
             env = {'HOME': self.filter_box_prefix(str(wd))}
             compiled = self.write_binary(Path(wd), binary)
@@ -207,6 +222,7 @@ class Lang(metaclass=MetaLang):
 
         return (isolator.isolate_retcode, isolator.info)
 
+
     async def run_compilation(self, result):
         if self.compiler is not None:
             cretcode, info, binary = await self.compile()
@@ -214,6 +230,7 @@ class Lang(metaclass=MetaLang):
 
             if cretcode != 0:
                 return
+
             if binary is None:
                 if result['compile']['stderr'].strip():
                     result['compile']['stderr'] += b'\n\n'
@@ -233,6 +250,9 @@ class Lang(metaclass=MetaLang):
 
         for i, test in enumerate(tests):
             retcode, info = await self.execute(binary, test)
+
+            assert info is not None
+            
             result['tests'][i] = {
                 'name': test.get('name', 'test{:03d}'.format(i)),
                 **info
@@ -262,8 +282,10 @@ class Lang(metaclass=MetaLang):
     
         return list(camisole.utils.uniquify(allowed_dirs))
 
+
     def compile_opt_out(self, output):
         return ['-o', output]
+
 
     def read_compiled(self, path, isolator):
         try:
@@ -271,6 +293,7 @@ class Lang(metaclass=MetaLang):
                 return c.read()
         except (FileNotFoundError, PermissionError):
             pass
+
 
     def write_binary(self, path, binary):
         compiled = path / self.execute_filename()
@@ -281,6 +304,7 @@ class Lang(metaclass=MetaLang):
         compiled.chmod(0o700)
         return compiled
 
+
     def source_filename(self):
         return 'source' + self.source_ext
 
@@ -290,9 +314,11 @@ class Lang(metaclass=MetaLang):
 
         return 'compiled'
 
+
     @staticmethod
     def filter_box_prefix(s):
         return re.sub('/var/(local/)?lib/isolate/[0-9]+', '', s)
+
 
     def compile_command(self, source, output):
         if self.compiler is None:
@@ -304,6 +330,7 @@ class Lang(metaclass=MetaLang):
                 *self.compile_opt_out(self.filter_box_prefix(output)),
                 self.filter_box_prefix(source)
             ]
+
 
     def execute_command(self, output):
         cmd = []

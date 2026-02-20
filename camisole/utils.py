@@ -5,9 +5,20 @@ import textwrap
 from decimal import Decimal
 
 
-def force_bytes(s):
-    if isinstance(s, bytes):
+bytes_like =  bytes | bytearray | memoryview
+
+def force_bytes(s: str | bytes_like) -> bytes:
+    """ Ensure bytes representation in output
+
+    Args:
+        s (str | bytes_like): string to convert to bytes if not already bytes
+
+    Returns:
+        bytes: bytes representation of s
+    """
+    if isinstance(s, bytes_like):
         return s
+
     return s.encode()
 
 
@@ -25,36 +36,49 @@ def parse_size(str_size):
     Transforms "1K", "1k" or "1 kB"-like strings to actual integers.
     Returns None if input is None.
     """
+
     if str_size is None:
         return None
+
     str_size = str_size.lower().strip()
     tmp = str_size.rfind('ib')
     str_size = str_size[:tmp]
+
     for l, m in (('k', 1 << 10), ('m', 1 << 20), ('g', 1 << 30)):
         if str_size.endswith(l):
             return int(str_size.rstrip(l)) * m
+
     return int(str_size)
 
 
 def parse_float(str_float):
     if str_float is None:
         return None
+
     return float(str_float)
 
 
 def tabulate(rows, headers=None, margin=1, align=None):
     ncols = len(rows[0])
     lengths = [-math.inf] * ncols
+
     if headers:
         # don't side-effect modify rows
         rows = [headers] + rows
+
     for row in rows:
         lengths = [max(l, len(col)) for l, col in zip(lengths, row)]
+
     lengths = [l + margin for l in lengths]
+
     if align is None:
         align = ['<'] * ncols
-    fmt = "".join("{:%s{s%d}}%s" % (a, i, " | " if i < ncols - 1 else "")
-                  for i, a in enumerate(align))
+
+    fmt = "".join(
+                "{:%s{s%d}}%s" % (a, i, " | " if i < ncols - 1 else "")
+                    for i, a in enumerate(align)
+            )
+
     for row in rows:
         yield fmt.format(*row, **{f's{i}': l for i, l in enumerate(lengths)})
 
@@ -65,15 +89,19 @@ def which(binary):
             '/usr/bin',
             '/usr/local/bin'
             '/bin']
+
     if os.path.dirname(binary) and os.access(binary, os.X_OK):
         return binary
+
     for part in path:
         # Ignore matches that are not inside standard directories
         if not any(part.startswith(prefix) for prefix in search_prefixes):
             continue
+
         p = os.path.join(part, binary)
         if os.access(p, os.X_OK):
             return p
+
     return binary
 
 
@@ -105,29 +133,37 @@ class AcceptHeader:
         RE_MIME_TYPE = re.compile(rf"^([{RE_TYPE}]+)(/[{RE_TYPE}]+)?$")
         RE_Q = re.compile(r'(?:^|;)\s*q=([0-9.-]+)(?:$|;)')
 
+
         def __init__(self, raw_mime_type):
             bits = raw_mime_type.split(';', 1)
             mime_type = bits[0]
+
             if not self.RE_MIME_TYPE.match(mime_type):
                 raise ValueError('"%s" is not a valid mime type' % mime_type)
+            
             tail = ''
             if len(bits) > 1:
                 tail = bits[1]
+
             self.mime_type = mime_type
             self.weight = self.get_weight(tail)
             self.pattern = self.get_pattern(mime_type)
 
+
         @classmethod
         def get_weight(cls, tail):
             match = cls.RE_Q.search(tail)
+
             try:
                 return Decimal(match.group(1))
             except (AttributeError, ValueError):
                 return Decimal(1)
 
+
         @staticmethod
         def get_pattern(mime_type):
             pat = mime_type.replace('*', '[a-zA-Z0-9_.$#!%^*-]+')
+
             return re.compile(f'^{pat}$')
 
         def matches(self, mime_type):
@@ -135,6 +171,7 @@ class AcceptHeader:
 
         def __repr__(self):
             return f"<AcceptableType {self.mime_type} = {self.weight}>"
+
 
     @classmethod
     def parse_header(cls, header):
@@ -146,13 +183,17 @@ class AcceptHeader:
                 pass
         return sorted(mime_types, key=lambda x: x.weight, reverse=True)
 
+
     @classmethod
     def get_best_accepted_types(cls, header, available):
         available = list(available)
+
         for acceptable_type in cls.parse_header(header):
             for available_type in available[:]:
                 if acceptable_type.matches(available_type):
                     yield available_type
+
                     available.remove(available_type)
+
                     if not available:
                         return

@@ -126,9 +126,10 @@ class Isolator:
         self.isolate_stdout = None
         self.isolate_stderr = None
 
+
     async def __aenter__(self):
-        busy = {int(p.name) for p in self.isolate_conf.root.iterdir()}
-        avail = set(range(self.isolate_conf.max_boxes)) - busy
+        busy = {int(p.name) for p in self.isolate_conf.root.iterdir()} # type: ignore
+        avail = set(range(self.isolate_conf.max_boxes)) - busy # type: ignore
 
         while avail:
             self.box_id = avail.pop()
@@ -189,7 +190,7 @@ class Isolator:
         }
 
         if 'exitsig' in m:
-            m['exitsig-message'] = signal_message(m['exitsig'])
+            m['exitsig-message'] = signal_message(m['exitsig']) # type: ignore
 
         self.meta = {**meta_defaults, **m}
 

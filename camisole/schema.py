@@ -37,7 +37,17 @@ def human_type_name(cls):
     }.get(cls, f"a {cls.__name__}")
 
 
-def validate_schema(obj, schema):
+def validate_schema(obj, schema: dict) -> None:
+    """ Validate that obj matches a given schema. Raises ValidationError if not.
+
+    Args:
+        obj(object): object to validate
+        schema (dict): schema to validate against
+
+    Raises:
+        ValidationError: if obj does not match the schema, with a message describing the error
+    """
+
     htn = human_type_name
 
     def explore(obj, schema, path):
