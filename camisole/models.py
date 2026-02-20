@@ -25,7 +25,7 @@ import subprocess
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Type
+from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
 import camisole.isolate
 import camisole.utils
@@ -85,62 +85,45 @@ class Program:
             )
 
 
-class MetaLang(type):
-    """Metaclass to customize Lang subclasses __repr__()"""
+class LangDefinition:
+    name: Optional[str]
 
-    def __repr__(self):
-        return "<{realname}{name}>"\
-            .format(
-                realname=self.__name__,
-                name=f' “{self.name}”' 
-                    if self.__name__ != self.name 
-                    else ''
-                )
+    source_ext: Optional[str]
+    compiler: Optional[Program]
+    interpreter: Optional[Program]
+    allowed_dirs: List[str]
+    extra_binaries: Dict[str, Program]
+    reference_source: Optional[str]
+    executer: Optional[Type['LangExecution']]
 
-
-class Lang(metaclass=MetaLang):
-    """
-    Abstract language descriptor.
-
-    Subclass and define the relevant attributes and methods, if need be.
-    """
-    _registry: Dict[str, Type['Lang']] = {}
-    _full_registry: Dict[str, Type['Lang']] = {}
-    name: Optional[str] = None
-
-    source_ext: Optional[str] = None
-    compiler: Optional[Program] = None
-    interpreter: Optional[Program] = None
-    allowed_dirs: List[str] = []
-    extra_binaries: Dict[str, Program] = {}
-    reference_source: Optional[str] = None
 
     def __init_subclass__(cls, register=True, name=None, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.name = name or cls.__name__
-
+        
         if not register:
             return
-
+        
         registry_name = cls.name.lower()
-        cls._full_registry[registry_name] = cls
-
+        
         for binary in cls.required_binaries():
             if binary is not None and not os.access(binary.cmd, os.X_OK):
-                logging.info(f'{cls.name}: cannot access `{binary.cmd}`, '
-                             'language not loaded')
+                logging.info(
+                        f'{cls.name}: cannot access `{binary.cmd}`, '
+                                'language not loaded'
+                        )
                 return
+        
+        registered, replaced = LangExecution.register_definition(cls)
 
-        if registry_name in cls._registry:
-            full_name = lambda c: f"{c.__module__}.{c.__qualname__}"
-            warnings.warn(f"Lang registry: name '{registry_name}' for "
-                          f"{full_name(cls)} overwrites "
-                          f"{full_name(Lang._registry[registry_name])}")
+        if registered and not replaced:
+            logging.info(f'{cls.name} language registered with name "{registry_name}"')
+        elif registered and replaced:
+            logging.info(
+                f'{cls.name} language registered with name "{registry_name}", '
+                        'replacing previous definition'
+                )
 
-        cls._registry[registry_name] = cls
-
-    def __init__(self, opts):
-        self.opts = opts
 
     @classmethod
     def required_binaries(cls):
@@ -158,8 +141,90 @@ class Lang(metaclass=MetaLang):
         return {p.cmd_name: {'version': p.version(), 'opts': p.opts}
                 for p in cls.required_binaries()}
 
+BinaryNamedFile = tuple[str, bytes]
+
+class LangExecution:
+    opts: dict
+    df: Type[LangDefinition]
+    
+    _registry: Dict[str, Type['LangExecution']] = {}
+    _definition_registry: Dict[str, Type[LangDefinition]] = {}
+    
+    @classmethod
+    def register_definition(cls: Type['LangExecution'], definition_cls: Type[LangDefinition]) -> tuple[bool, bool]:
+        """ Registers a LangDefinition class to be used by LangExecution classes.
+        Args:
+            definition_cls (Type[LangDefinition]): the LangDefinition class to register
+        
+        Returns:
+            tuple(bool, bool): (registered, overwritten)
+        """
+
+        if definition_cls.name is None:
+            return False, False
+
+        registry_name = definition_cls.name.lower()
+        replaced = False
+
+        if registry_name in cls._definition_registry:
+            replaced = True
+
+            def full_name(c):
+                return f"{c.__module__}.{c.__qualname__}"
+
+            warnings.warn(
+                        f"LangExecution definition registry: name '{registry_name}' for "
+                        f"{full_name(definition_cls)} overwrites "
+                        f"{full_name(cls._definition_registry[registry_name])}"
+                    )
+
+        cls._definition_registry[registry_name] = definition_cls
+        
+        if definition_cls.executer is None:
+            # Dynamically create an executer class if not defined, to avoid boilerplate for simple languages
+            definition_cls.executer = type(
+                    f"{definition_cls.name}Execution",
+                    (cls,),
+                    {}
+                )
+
+        cls._registry[registry_name] = definition_cls.executer
+        definition_cls.executer.register_language(definition_cls)
+
+        return True, replaced
+
+
+    @classmethod
+    def register_language(cls, language_cls: Type['LangDefinition']) -> None:
+        cls.df = language_cls
+
+
+    @classmethod
+    def required_binaries(cls):
+        yield from cls.df.required_binaries()
+
+
+    def __init__(self, opts: dict):
+        name = opts.get('lang', self.df.name)
+        
+        if name not in self._registry:
+            raise ValueError(f"language {name} not found")
+
+        self.opts = opts
+
+
+    def __repr__(self):
+        return "<{realname}{name}>"\
+            .format(
+                realname=self.df.name,
+                name=f' “{self.df.name}”' 
+                    if self.df.name != self.df.__class__.__name__ 
+                    else ''
+            )
+
+
     async def compile(self):
-        if not self.compiler:
+        if not self.df.compiler:
             raise RuntimeError("no compiler")
 
         # We give compilers a nice /tmp playground
@@ -185,9 +250,12 @@ class Lang(metaclass=MetaLang):
 
             cmd = self.compile_command(str(source), str(compiled))
 
-            await isolator.run(cmd, env={**env, **self.compiler.env})
+            await isolator.run(cmd, env={**env, **self.df.compiler.env})
 
             binary = self.read_compiled(str(compiled), isolator)
+
+            if binary is not None:
+                binary = binary[1]
 
         root_tmp.cleanup()
 
@@ -214,17 +282,18 @@ class Lang(metaclass=MetaLang):
             env = {'HOME': self.filter_box_prefix(str(wd))}
             compiled = self.write_binary(Path(wd), binary)
 
-            env = {**env, **(self.interpreter.env if self.interpreter else {})}
+            env = {**env, **(self.df.interpreter.env if self.df.interpreter else {})}
 
-            await isolator.run(self.execute_command(str(compiled)),
-                               env=env, data=input_data
+            await isolator.run(
+                                self.execute_command(str(compiled)),
+                                env=env, data=input_data
                             )
 
         return (isolator.isolate_retcode, isolator.info)
 
 
     async def run_compilation(self, result):
-        if self.compiler is not None:
+        if self.df.compiler is not None:
             cretcode, info, binary = await self.compile()
             result['compile'] = info
 
@@ -241,6 +310,7 @@ class Lang(metaclass=MetaLang):
             binary = camisole.utils.force_bytes(self.opts.get('source', ''))
 
         return binary
+
 
     async def run_tests(self, binary, result):
         tests = self.opts.get('tests', [{}])
@@ -264,6 +334,7 @@ class Lang(metaclass=MetaLang):
                 ):
                 break
 
+
     async def run(self):
         result = {}
         binary = await self.run_compilation(result)
@@ -277,7 +348,7 @@ class Lang(metaclass=MetaLang):
 
     def get_allowed_dirs(self):
         allowed_dirs = []
-        allowed_dirs += self.allowed_dirs
+        allowed_dirs += self.df.allowed_dirs
         allowed_dirs += conf['allowed-dirs']
     
         return list(camisole.utils.uniquify(allowed_dirs))
@@ -287,10 +358,10 @@ class Lang(metaclass=MetaLang):
         return ['-o', output]
 
 
-    def read_compiled(self, path, isolator):
+    def read_compiled(self, path, isolator) -> list[BinaryNamedFile] | None:
         try:
             with Path(path).open('rb') as c:
-                return c.read()
+                return [("", c.read())]
         except (FileNotFoundError, PermissionError):
             pass
 
@@ -306,11 +377,12 @@ class Lang(metaclass=MetaLang):
 
 
     def source_filename(self):
-        return 'source' + self.source_ext
+        return 'source' + self.df.source_ext if self.df.source_ext else 'source'
+
 
     def execute_filename(self):
-        if self.compiler is None and self.source_ext:
-            return 'compiled' + self.source_ext
+        if self.df.compiler is None and self.df.source_ext:
+            return 'compiled' + self.df.source_ext
 
         return 'compiled'
 
@@ -321,12 +393,12 @@ class Lang(metaclass=MetaLang):
 
 
     def compile_command(self, source, output):
-        if self.compiler is None:
+        if self.df.compiler is None:
             return None
 
         return [
-                self.compiler.cmd,
-                *self.compiler.opts,
+                self.df.compiler.cmd,
+                *self.df.compiler.opts,
                 *self.compile_opt_out(self.filter_box_prefix(output)),
                 self.filter_box_prefix(source)
             ]
@@ -335,13 +407,13 @@ class Lang(metaclass=MetaLang):
     def execute_command(self, output):
         cmd = []
     
-        if self.interpreter is not None:
-            cmd += [self.interpreter.cmd] + self.interpreter.opts
+        if self.df.interpreter is not None:
+            cmd += [self.df.interpreter.cmd] + self.df.interpreter.opts
 
         return cmd + [self.filter_box_prefix(output)]
 
 
-class PipelineLang(Lang, register=False):
+class PipelineLang(LangExecution):
     """
     A meta-language that compiles multiple sub-languages, passing the
     compilation result to the next sub-language, and eventually executing the
@@ -349,20 +421,31 @@ class PipelineLang(Lang, register=False):
 
     Subclass and define the ``sub_langs`` attribute.
     """
-    sub_langs: List[Type[Lang]] = []
+    sub_langs: List[Type[LangDefinition]] = list()
+
+
+    @classmethod
+    def register_language(cls, language_cls: type[LangDefinition]) -> None:
+        super().register_language(language_cls)
+        
+        if hasattr(language_cls, 'sub_langs'):
+            cls.sub_langs += [language_cls]
+
 
     @classmethod
     def required_binaries(cls):
-        yield from super().required_binaries()
+        for lang_cls in cls.sub_langs:
+            yield from lang_cls.required_binaries()
 
-        for sub in cls.sub_langs:
-            yield from sub.required_binaries()
 
     async def run_compilation(self, result):
         source = camisole.utils.force_bytes(self.opts.get('source', ''))
+        binary = None
 
-        for _, lang_cls in enumerate(self.sub_langs):
-            lang = lang_cls({**self.opts, 'source': source})
+        for lang_cls in self.sub_langs:
+            assert lang_cls.executer is not None
+
+            lang = lang_cls.executer({**self.opts, 'source': source})
 
             cretcode, info, binary = await lang.compile()
             result['compile'] = info
@@ -381,6 +464,7 @@ class PipelineLang(Lang, register=False):
             source = binary
 
         return binary
+
 
     async def compile(self):
         raise NotImplementedError()
