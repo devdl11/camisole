@@ -25,7 +25,7 @@ import subprocess
 import tempfile
 import warnings
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Sequence, Type
+from typing import Dict, List, Optional, Type
 
 import camisole.isolate
 import camisole.utils
@@ -86,15 +86,15 @@ class Program:
 
 
 class LangDefinition:
-    name: Optional[str]
+    name: Optional[str] = None
 
-    source_ext: Optional[str]
-    compiler: Optional[Program]
-    interpreter: Optional[Program]
-    allowed_dirs: List[str]
-    extra_binaries: Dict[str, Program]
-    reference_source: Optional[str]
-    executer: Optional[Type['LangExecution']]
+    source_ext: Optional[str] = None
+    compiler: Optional[Program] = None
+    interpreter: Optional[Program] = None
+    allowed_dirs: List[str] = list()
+    extra_binaries: Dict[str, Program] = dict()
+    reference_source: Optional[str] = None
+    executer: Optional[Type['LangExecution']] = None
 
 
     def __init_subclass__(cls, register=True, name=None, **kwargs):
