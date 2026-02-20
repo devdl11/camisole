@@ -7,15 +7,15 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-from camisole.models import Lang
+from camisole.models import LangExecution
 from camisole.conf import conf
 
 
-def all() -> Mapping[str, Type[Lang]]:
-    return Lang._registry
+def all() -> Mapping[str, Type[LangExecution]]:
+    return LangExecution._registry
 
 
-def by_name(name: str) -> Type[Lang]:
+def by_name(name: str) -> Type[LangExecution]:
     """ Returns Lang class object for a given language name (case-insensitive)
 
     Args:

@@ -155,7 +155,7 @@ async def system_handler(request, data):
 async def languages_handler(request, data):
     return {
         'languages': {
-            lang: { 'name': cls.name, 'programs': cls.programs() }
+            lang: { 'name': cls.df.name, 'programs': cls.df.programs() }
                 for lang, cls in camisole.languages.all().items()
             }
         }
