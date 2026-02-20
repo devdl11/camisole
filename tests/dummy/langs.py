@@ -1,9 +1,9 @@
-from camisole.models import Lang, Program
+from camisole.models import LangExecution, Program
 
 
-class CompiledLang(Lang):
+class CompiledLang(LangExecution):
     compiler = Program('echo')
 
 
-class InterpretedLang(Lang):
+class InterpretedLang(LangExecution):
     interpreter = Program('echo')

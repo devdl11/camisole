@@ -1,11 +1,11 @@
 import pytest
 
 from camisole.languages import by_name
-from camisole.models import Lang
+from camisole.models import LangDefinition, LangExecution
 
 
 def test_default_name():
-    class MyFoo(Lang):
+    class MyFoo(LangDefinition):
         pass
 
     assert by_name('myfoo') is MyFoo
@@ -13,7 +13,7 @@ def test_default_name():
 
 
 def test_user_name():
-    class MyFoo(Lang, name='Chiche'):
+    class MyFoo(LangDefinition, name='Chiche'):
         pass
 
     assert by_name('chiche') is MyFoo
@@ -21,17 +21,20 @@ def test_user_name():
 
 
 def test_overwrite_warning():
-    class FooLang(Lang):
+    class FooLang(LangDefinition):
         pass
 
     assert by_name('foolang') is FooLang
     assert by_name('foolang').name == 'FooLang'
 
     with pytest.warns(UserWarning) as record:
-        class BarLang(Lang, name='Foolang'):
+        class BarLang(LangDefinition, name='Foolang'):
             pass
+
         assert len(record) == 1
+
         message = str(record[0].message)
+
         assert "foolang" in message
         assert FooLang.__name__ in message
         assert "overwrites" in message

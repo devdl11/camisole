@@ -62,7 +62,7 @@ class CamisoleLanguageTable(ListTable):
 
     def run(self):
         camisole.languages.load_builtins()
-        all_langs = camisole.languages.Lang._full_registry.values()
+        all_langs = camisole.languages.LangExecution._definition_registry.values()
 
         self.options['widths'] = 'auto'
         title, messages = self.make_title()
@@ -75,15 +75,20 @@ class CamisoleLanguageTable(ListTable):
             headers.append([nodes.paragraph(text=f"{f.name} packages")])
 
         table_body = []
-        for cls in sorted(all_langs, key=lambda e: e.name.lower()):
+        for cls in sorted(all_langs, key=lambda e: e.name.lower() if e.name else ""):
             binaries = set(b.cmd_name for b in cls.required_binaries())
+            
             if not binaries:
                 continue
+            assert cls.name, "language should have a name"
+
             body = [[nodes.paragraph(text=cls.name)],
                     [nodes.literal(text=cls.__name__)],
                     build_list(binaries)]
+
             for f in self.package_finders:
                 body.append(build_list(f.for_binaries(binaries)))
+
             table_body.append(body)
 
         table = [headers] + table_body
@@ -99,7 +104,8 @@ class CamisoleLanguageList(Directive):
 
     def run(self):
         camisole.languages.load_builtins()
-        langs = sorted(l.name for l in camisole.languages.Lang._full_registry.values())
+        langs = sorted(l.name for l in camisole.languages.LangExecution._definition_registry.values() if l.name)
+
         return [nodes.paragraph(text=(", ".join(langs) + "."))]
 
 
