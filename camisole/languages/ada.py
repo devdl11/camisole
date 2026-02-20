@@ -1,13 +1,14 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
-
-class Ada(Lang):
-    source_ext = '.adb'
-    compiler = Program('gnatmake', opts=['-f'])
-    reference_source = r'''
+reference=r"""
 with Ada.Text_IO; use Ada.Text_IO;
 procedure Hello is
 begin
-   Put_Line("42");
+    Put_Line("42");
 end Hello;
-'''
+"""
+
+class Ada(LangDefinition):
+    source_ext = '.adb'
+    compiler = Program('gnatmake', opts=['-f'])
+    reference_source = reference

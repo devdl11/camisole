@@ -1,7 +1,10 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+process.stdout.write('42\n');
+'''
 
-class Javascript(Lang):
+class Javascript(LangDefinition):
     source_ext = '.js'
     interpreter = Program('node')
-    reference_source = r"process.stdout.write('42\n');"
+    reference_source = reference

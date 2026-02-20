@@ -1,7 +1,10 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+print "42\n";
+'''
 
-class Perl(Lang):
+class Perl(LangDefinition):
     source_ext = '.pl'
     interpreter = Program('perl')
-    reference_source = r'print "42\n";'
+    reference_source = reference

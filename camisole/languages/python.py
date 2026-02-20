@@ -1,7 +1,10 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+print("42")
+'''
 
-class Python(Lang):
+class Python(LangDefinition):
     source_ext = '.py'
     interpreter = Program('python3', opts=['-S'])
-    reference_source = r'print("42")'
+    reference_source = reference

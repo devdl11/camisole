@@ -1,15 +1,17 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
-
-class Go(Lang):
-    source_ext = '.go'
-    compiler = Program('go', opts=['build', '-buildmode=exe'],
-                       version_opt='version',
-                       env={'GOCACHE':'/box/.gocache'})
-    reference_source = r'''
+reference = r'''
 package main
 import "fmt"
 func main() {
     fmt.Println("42")
 }
 '''
+
+class Go(LangDefinition):
+    source_ext = '.go'
+    compiler = Program('go', opts=['build', '-buildmode=exe'],
+                       version_opt='version',
+                       env={'GOCACHE':'/box/.gocache'})
+    reference_source = reference
+

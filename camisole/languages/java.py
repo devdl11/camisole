@@ -2,7 +2,22 @@ import re
 import subprocess
 from pathlib import Path
 
-from camisole.models import Lang, Program
+from camisole.models import LangExecution, LangDefinition, Program
+
+reference = r'''
+class MyπClass {
+    static int fortytwo() {
+        return 42;
+    }
+    static class Subclassé {
+        public static void main(String notMe) {}
+        final static public void main(String args[]) {
+            System.out.println(MyπClass.fortytwo());
+        }
+    }
+}
+'''
+
 
 # In Java, the entry point (main() function) is not trivial to find as it can
 # be defined as a method of any of the classes contained in the source program.
@@ -30,30 +45,8 @@ RE_WRONG_FILENAME_ERROR = re.compile(r'error:\s+class\s+(.+?)\s+is\s+public,')
 PSVMAIN_DESCRIPTOR = 'descriptor: ([Ljava/lang/String;)V'
 
 
-class Java(Lang):
-    source_ext = '.java'
+class JavaExecution(LangExecution):
     compiled_ext = '.class'
-    compiler = Program('javac', opts=['-encoding', 'UTF-8'],
-                       env={'LANG': 'en_US.UTF-8'}, version_opt='-version')
-    interpreter = Program('java', version_opt='-version')
-    # /usr/lib/jvm/java-8-openjdk/jre/lib/amd64/jvm.cfg links to
-    # /etc/java-8-openjdk/amd64/jvm.cfg
-    allowed_dirs = ['/etc']
-    # ensure we can parse the javac(1) stderr
-    extra_binaries = {'disassembler': Program('javap', version_opt='-version')}
-    reference_source = '''
-class MyπClass {
-    static int fortytwo() {
-        return 42;
-    }
-    static class Subclassé {
-        public static void main(String notMe) {}
-        final static public void main(String args[]) {
-           System.out.println(MyπClass.fortytwo());
-        }
-    }
-}
-'''
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -74,13 +67,17 @@ class MyπClass {
         except KeyError:
             pass
 
+
     def compile_opt_out(self, output):
         # javac has no output directive, file name is class name
         return []
 
+
     async def compile(self):
         # try to compile with default class name (Main)
         retcode, info, binary = await super().compile()
+        assert info is not None, "compile() should return info dict"
+
         if retcode != 0:
             # error: public class name is not '1337' as it's an illegal name,
             # so find what it actually is
@@ -95,54 +92,79 @@ class MyπClass {
                 self.class_name = match.group(1)
                 # retry with new name
                 retcode, info, binary = await super().compile()
+
         return (retcode, info, binary)
 
+
     def source_filename(self):
-        return self.class_name + self.source_ext
+        assert self.class_name, "class name should have been set by compile()"
+        assert self.df.source_ext, "source extension should be defined in the language definition"
+
+        return self.class_name + self.df.source_ext
+
 
     def execute_filename(self):
         # return eg. Main.class
+        assert self.class_name, "class name should have been set by compile()"
+        
         return self.class_name + self.compiled_ext
 
+
     def execute_command(self, output):
-        cmd = [self.interpreter.cmd] + self.interpreter.opts
+        assert self.df.interpreter, "interpreter should be defined in the language definition"
+
+        cmd = [self.df.interpreter.cmd] + self.df.interpreter.opts
 
         # foo/Bar.class is run with $ java -cp foo Bar
         cmd += ['-cp', str(Path(self.filter_box_prefix(output)).parent),
                 self.class_name]
         return cmd
 
+
     def find_class_having_main(self, classes):
+        assert self.df.compiler, "compiler should be defined in the language definition"
+
         for file in classes:
             # run javap(1) with type signatures
             try:
                 stdout = subprocess.check_output(
-                    [self.extra_binaries['disassembler'].cmd, '-s', str(file)],
-                    stderr=subprocess.DEVNULL, env=self.compiler.env)
+                                        [self.df.extra_binaries['disassembler'].cmd, '-s', str(file)],
+                                        stderr=subprocess.DEVNULL,
+                                        env=self.df.compiler.env
+                                    )
             except subprocess.SubprocessError:  # noqa
                 continue
+
             # iterate on lines to find p s v main() signature and then
             # its descriptor on the line below; we don't rely on the type
             # from the signature, because it could be String[], String... or
             # some other syntax I'm not even aware of
             lines = iter(stdout.decode().split('\n'))
+
             for line in lines:
                 line = line.lstrip()
+
                 if line.startswith('public static') and 'void main(' in line:
                     if next(lines).lstrip() == PSVMAIN_DESCRIPTOR:
                         return file.stem
 
-    def read_compiled(self, path, isolator):
+
+    def read_compiled(self, path, isolator) -> list[tuple[str, bytes]] | None:
         # in case of multiple or nested classes, multiple .class files are
         # generated by javac
         classes = list(isolator.path.glob('*.class'))
+
+        # files: list of tuples (filename, filedata as bytes)
         files = [(file.name, file.open('rb').read()) for file in classes]
+
         if not self.found_public:
             # the main() may be anywhere, so run javap(1) on all .class
             new_class_name = self.find_class_having_main(classes)
             if new_class_name:
                 self.class_name = new_class_name
+
         return files
+
 
     def write_binary(self, path, binary):
         # see read_compiled(), we need to write back all .class files
@@ -151,3 +173,17 @@ class MyπClass {
             with (path / file).open('wb') as c:
                 c.write(data)
         return path / self.execute_filename()
+
+
+class Java(LangDefinition):
+    source_ext = '.java'
+    compiler = Program('javac', opts=['-encoding', 'UTF-8'],
+                       env={'LANG': 'en_US.UTF-8'}, version_opt='-version')
+    interpreter = Program('java', version_opt='-version')
+    # /usr/lib/jvm/java-8-openjdk/jre/lib/amd64/jvm.cfg links to
+    # /etc/java-8-openjdk/amd64/jvm.cfg
+    allowed_dirs = ['/etc']
+    # ensure we can parse the javac(1) stderr
+    extra_binaries = {'disassembler': Program('javap', version_opt='-version')}
+    reference_source = reference
+    executer = JavaExecution

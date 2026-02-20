@@ -1,9 +1,10 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+:- write('42\n').
+'''
 
-class Prolog(Lang):
+class Prolog(LangDefinition):
     source_ext = '.pl'
-    interpreter = Program('swipl',
-                          opts=['--quiet', '-t', 'halt'],
-                          version_opt='--version')
-    reference_source = r":- write('42\n')."
+    interpreter = Program('swipl', opts=['--quiet', '-t', 'halt'], version_opt='--version')
+    reference_source = reference

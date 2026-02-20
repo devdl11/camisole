@@ -1,7 +1,10 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+(display "42")(newline)
+'''
 
-class Scheme(Lang):
+class Scheme(LangDefinition):
     source_ext = '.scm'
     interpreter = Program('gsi', version_opt='-v')
-    reference_source = r'(display "42")(newline)'
+    reference_source = reference

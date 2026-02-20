@@ -1,10 +1,6 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
-
-class CXX(Lang, name="C++"):
-    source_ext = '.cc'
-    compiler = Program('g++', opts=['-std=c++17', '-Wall', '-Wextra', '-O2'])
-    reference_source = r'''
+reference=r'''
 #include <iostream>
 int main()
 {
@@ -12,3 +8,9 @@ int main()
     return 0;
 }
 '''
+
+class CXX(LangDefinition, name="C++"):
+    source_ext = '.cc'
+    compiler = Program('g++', opts=['-std=c++17', '-Wall', '-Wextra', '-O2'])
+    reference_source = reference
+

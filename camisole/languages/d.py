@@ -1,11 +1,6 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, LangExecution, Program
 
-
-class D(Lang):
-    source_ext = '.d'
-    compiler = Program('dmd')
-    allowed_dirs = ['/etc']
-    reference_source = r'''
+reference=r'''
 void main()
 {
     import std.stdio: writeln;
@@ -13,6 +8,15 @@ void main()
 }
 '''
 
+class DExecution(LangExecution):
     def compile_opt_out(self, output):
         # '-of' and its value as two distinct arguments is illegal (go figure)
         return ['-of' + output]
+
+
+class D(LangDefinition):
+    source_ext = '.d'
+    compiler = Program('dmd')
+    allowed_dirs = ['/etc']
+    reference_source = reference
+    executer = DExecution

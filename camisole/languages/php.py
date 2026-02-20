@@ -1,7 +1,12 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
+reference = r'''
+<?php
+echo "42\n";
+?>
+'''
 
-class PHP(Lang):
+class PHP(LangDefinition):
     source_ext = '.php'
     interpreter = Program('php')
-    reference_source = r'<?php echo "42\n";'
+    reference_source = reference

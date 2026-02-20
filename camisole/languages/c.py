@@ -1,11 +1,6 @@
-from camisole.models import Lang, Program
+from camisole.models import LangDefinition, Program
 
-
-class C(Lang):
-    source_ext = '.c'
-    compiler = Program('gcc',
-                       opts=['-std=c11', '-Wall', '-Wextra', '-O2', '-lm'])
-    reference_source = r'''
+reference=r'''
 #include <stdio.h>
 
 int main(void)
@@ -14,3 +9,9 @@ int main(void)
     return 0;
 }
 '''
+
+class C(LangDefinition):
+    source_ext = '.c'
+    compiler = Program('gcc',  opts=['-std=c11', '-Wall', '-Wextra', '-O2', '-lm'])
+    reference_source = reference
+
