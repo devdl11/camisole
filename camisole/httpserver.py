@@ -9,6 +9,7 @@ import camisole.languages
 import camisole.ref
 import camisole.schema
 import camisole.system
+import camisole.models
 
 TYPE_JSON = 'application/json'
 TYPE_MSGPACK = 'application/msgpack'
@@ -123,13 +124,32 @@ async def run_handler(request, data):
     except camisole.schema.ValidationError as e:
         return {'success': False, 'error': f"malformed payload: {e}"}
 
-    lang_name = data['lang'].lower()
-    try:
-        lang = camisole.languages.by_name(lang_name)(data)
-    except KeyError:
-        raise RuntimeError('Incorrect language {}'.format(lang_name))
+    # Check if this is an interactive judge mode request
+    has_judge_source = 'judge_source' in data and data['judge_source']
+    has_judge_lang = 'judge_lang' in data and data['judge_lang']
+    
+    if has_judge_source and has_judge_lang:
+        # Route to InteractiveLang: use user's language for user execution
+        lang_name = data['lang'].lower()
+        
+        # Get user language definition
+        try:
+            user_lang_def = camisole.models.LangExecution._definition_registry[lang_name]
+        except KeyError:
+            raise RuntimeError(f'Incorrect user language {lang_name}')
+        
+        # Create InteractiveLang execution instance
+        exec_instance = camisole.models.InteractiveLang(data)
+        return await exec_instance.run()
+    else:
+        # Standard (non-interactive) mode: use regular language execution
+        lang_name = data['lang'].lower()
+        try:
+            lang = camisole.languages.by_name(lang_name)(data)
+        except KeyError:
+            raise RuntimeError('Incorrect language {}'.format(lang_name))
 
-    return await lang.run()
+        return await lang.run()
 
 
 @json_msgpack_handler

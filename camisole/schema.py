@@ -116,10 +116,39 @@ ISOLATE_OPTS_PROPERTIES = {
     'wall-time': O(number),
 }
 
+
+# Request-level judge configuration (defines judge code to use for all tests)
+JUDGE_REQUEST_PROPERTIES = {
+    'judge_source': O(str_bytes),  # judge program source code
+    'judge_lang': O(str),          # judge program language
+    'judge_compile': O(ISOLATE_OPTS_PROPERTIES),  # isolate options for judge compilation
+}
+
+# Test-level judge configuration (enables judge for a specific test)
+JUDGE_TEST_PROPERTIES = {
+    'judge': O(bool),  # enable judge mode for this test
+}
+
+# Firewall rules for user → judge I/O filtering
+FIREWALL_PROPERTIES = {
+    'allowed_chars': O(str),      # regex pattern for allowed characters
+    'max_line_length': O(int),    # max bytes per line
+    'max_total_bytes': O(int),    # max total bytes user can send
+    'format_rules': O([str]),     # custom validator names
+    'violation_action': O(str),   # 'STOP' or 'WARN'
+}
+
 EXECUTE_PROPERTIES = {
     'stdin': O(str_bytes),
-    'judge': O(bool),
+    **JUDGE_TEST_PROPERTIES,  # test-level judge enable flag
     **ISOLATE_OPTS_PROPERTIES,
+}
+
+TEST_PROPERTIES = {
+    'name': O(str),
+    'fatal': O(bool),
+    **EXECUTE_PROPERTIES,
+    'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
 }
 
 RUN_SCHEMA = {
@@ -128,11 +157,8 @@ RUN_SCHEMA = {
     'all_fatal': O(bool),
     'compile': O(ISOLATE_OPTS_PROPERTIES),
     'execute': O(EXECUTE_PROPERTIES),
-    'tests': O([{
-        'name': O(str),
-        'fatal': O(bool),
-        **EXECUTE_PROPERTIES,
-    }]),
+    **JUDGE_REQUEST_PROPERTIES,  # request-level judge config
+    'tests': O([TEST_PROPERTIES]),
 }
 
 

@@ -468,3 +468,235 @@ class PipelineLang(LangExecution):
 
     async def compile(self):
         raise NotImplementedError()
+
+
+class InteractiveLang(LangExecution):
+    """
+    Interactive execution mode with judge process.
+    
+    Runs user code and judge code in separate sandboxes with I/O mediation.
+    Implements asymmetric filtering:
+    - Judge → User: transparent passthrough
+    - User → Judge: filtered through firewall rules
+    """
+
+    async def run(self):
+        """
+        Main execution pipeline for interactive mode.
+        
+        Compilation flow:
+        1. Compile user code
+        2. Compile judge code
+        3. Run tests with I/O proxy
+        """
+        result = {}
+
+        # Compile user code
+        user_binary = await self.run_compilation(result)
+        if not user_binary:
+            return result
+
+        # Compile judge code
+        judge_binary = await self.run_judge_compilation(result)
+        if not judge_binary:
+            return result
+
+        # Run interactive tests
+        await self.run_interactive_tests(user_binary, judge_binary, result)
+
+        return result
+
+    async def run_judge_compilation(self, result):
+        """
+        Compile judge code in a separate sandbox.
+        
+        Returns:
+            judge_binary: compiled judge code (bytes), or None if compilation failed
+        """
+        judge_source = self.opts.get('judge_source')
+        judge_lang = self.opts.get('judge_lang')
+
+        if not judge_source or not judge_lang:
+            result['compile'] = result.get('compile', {})
+            result['compile']['judge_error'] = 'judge_source and judge_lang required'
+            return None
+
+        # Look up judge language
+        judge_lang_lower = judge_lang.lower()
+        if judge_lang_lower not in LangExecution._registry:
+            result['compile'] = result.get('compile', {})
+            result['compile']['judge_error'] = f'judge language "{judge_lang}" not found'
+            return None
+
+        # Create execution context for judge language
+        judge_exec_cls = LangExecution._registry[judge_lang_lower]
+        judge_opts = {
+            'lang': judge_lang,
+            'source': judge_source,
+            **self.opts.get('judge_compile', {}),
+        }
+        judge_exec = judge_exec_cls(judge_opts)
+
+        # Compile judge code
+        judge_cretcode, judge_info, judge_binary = await judge_exec.compile()
+
+        # Store judge compilation info in result
+        if 'compile' not in result:
+            result['compile'] = {}
+        result['compile']['judge'] = judge_info
+
+        if judge_cretcode != 0:
+            return None
+
+        if judge_binary is None:
+            result['compile']['judge_error'] = 'Cannot find judge binary'
+            return None
+
+        return judge_binary
+
+    async def run_interactive_tests(self, user_binary, judge_binary, result):
+        """
+        Run tests with interactive proxy I/O mediation.
+        
+        Each test runs user and judge in separate sandboxes with I/O proxy.
+        """
+        import camisole.proxy
+
+        tests = self.opts.get('tests', [{}])
+        if tests:
+            result['tests'] = [{}] * len(tests)
+
+        for i, test in enumerate(tests):
+            # Prepare firewall rules if specified
+            firewall_rules = None
+            if test.get('firewall_rules'):
+                firewall_rules = camisole.proxy.FirewallRules(
+                    allowed_chars=test['firewall_rules'].get('allowed_chars'),
+                    max_line_length=test['firewall_rules'].get('max_line_length'),
+                    max_total_bytes=test['firewall_rules'].get('max_total_bytes'),
+                    format_rules=test['firewall_rules'].get('format_rules', []),
+                    violation_action=test['firewall_rules'].get('violation_action', 'STOP'),
+                )
+
+            # Extract isolate options for user and judge
+            user_opts = {**self.opts.get('execute', {}), **test}
+            judge_opts = test.copy()
+
+            # Filter out non-isolate options
+            isolate_option_keys = {
+                'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
+            }
+            judge_opts = {k: v for k, v in judge_opts.items() if k in isolate_option_keys}
+
+            # Run interactive test via proxy
+            proxy_result = await self._run_interactive_test_via_proxy(
+                user_binary, user_opts,
+                judge_binary, judge_opts,
+                firewall_rules=firewall_rules
+            )
+
+            # Format result
+            test_result = {
+                'name': test.get('name', 'test{:03d}'.format(i)),
+                **proxy_result.to_dict(),
+            }
+            result['tests'][i] = test_result
+
+            # Check if fatal
+            if proxy_result.verdict != camisole.proxy.ProxyErrorClass.PASS and (
+                    test.get('fatal', False) or
+                    self.opts.get('all_fatal', False)
+                ):
+                break
+
+    async def _run_interactive_test_via_proxy(self, user_binary, user_opts,
+                                             judge_binary, judge_opts,
+                                             firewall_rules=None):
+        """
+        Run a single interactive test via proxy.
+        
+        Creates two isolators (user and judge) and mediates their I/O.
+        """
+        import camisole.proxy
+
+        # Create user isolator
+        user_isolator = camisole.isolate.Isolator(user_opts, 
+            allowed_dirs=self.get_allowed_dirs())
+        
+        # Create judge isolator
+        judge_isolator = camisole.isolate.Isolator(judge_opts,
+            allowed_dirs=self.get_allowed_dirs())
+
+        try:
+            async with user_isolator, judge_isolator:
+                # Set up user sandbox
+                assert user_isolator.path is not None
+                wd_user = Path(user_isolator.path)
+                env_user = {'HOME': self.filter_box_prefix(str(wd_user))}
+                compiled_user = self.write_binary(wd_user, user_binary)
+                env_user = {**env_user, **(self.df.interpreter.env if self.df.interpreter else {})}
+
+                # Set up judge sandbox
+                assert judge_isolator.path is not None
+                wd_judge = Path(judge_isolator.path)
+                env_judge = {'HOME': self.filter_box_prefix(str(wd_judge))}
+                
+                # Determine judge language for execution
+                judge_lang = self.opts.get('judge_lang', '').lower()
+                judge_exec_cls = LangExecution._registry.get(judge_lang)
+                judge_df = LangExecution._definition_registry.get(judge_lang)
+                
+                if not judge_df:
+                    return camisole.proxy.ProxyResult(
+                        verdict=camisole.proxy.ProxyErrorClass.JUDGE_RUNTIME_ERROR,
+                        error_message=f"Judge language {judge_lang} not found"
+                    )
+                
+                compiled_judge = self._write_judge_binary(wd_judge, judge_binary, judge_df)
+                env_judge = {**env_judge, **(judge_df.interpreter.env if judge_df.interpreter else {})}
+
+                # Build commands
+                user_cmd = self.execute_command(str(compiled_user))
+                judge_cmd = self._judge_execute_command(str(compiled_judge), judge_df)
+
+                # Create proxy with firewall rules
+                proxy = camisole.proxy.InteractiveProxy(
+                    firewall_rules=firewall_rules,
+                    record_transcript=False,  # can make configurable
+                    timeout=30.0  # can make configurable via opts
+                )
+
+                # Run proxy
+                return await proxy.run(user_cmd, judge_cmd, env_user, env_judge)
+
+        except Exception as e:
+            logging.error(f"Error in interactive test: {e}")
+            return camisole.proxy.ProxyResult(
+                verdict=camisole.proxy.ProxyErrorClass.PROXY_COMMUNICATION_ERROR,
+                error_message=str(e)
+            )
+
+    def _write_judge_binary(self, path: Path, binary: bytes, judge_df: Type[LangDefinition]) -> Path:
+        """
+        Write judge binary to sandbox, similar to write_binary but for judge language.
+        """
+        # Determine filename based on judge language
+        if judge_df.source_ext:
+            filename = 'judge' + judge_df.source_ext
+        else:
+            filename = 'judge'
+
+        compiled = path / filename
+        with compiled.open('wb') as f:
+            f.write(binary)
+        compiled.chmod(0o700)
+        return compiled
+
+    def _judge_execute_command(self, judge_path: str, judge_df: Type[LangDefinition]) -> List[str]:
+        """Build command to execute judge, using judge's language definition."""
+        cmd = []
+        
+        if judge_df.interpreter is not None:
+            cmd += [judge_df.interpreter.cmd] + judge_df.interpreter.opts
+        
+        return cmd + [self.filter_box_prefix(judge_path)]
