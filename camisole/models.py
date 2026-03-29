@@ -320,7 +320,9 @@ class LangExecution:
             result['tests'] = [{}] * len(tests)
 
         for i, test in enumerate(tests):
-            retcode, info = await self.execute(binary, test)
+            # user_execution overrides flat test-level isolate opts for user code
+            test_opts = {**test, **test.get('user_execution', {})}
+            retcode, info = await self.execute(binary, test_opts)
 
             assert info is not None
             
@@ -587,15 +589,18 @@ class InteractiveLang(LangExecution):
                     violation_action=test['firewall_rules'].get('violation_action', 'STOP'),
                 )
 
-            # Extract isolate options for user and judge
-            user_opts = {**self.opts.get('execute', {}), **test}
-            judge_opts = test.copy()
+            # Extract isolate options for user and judge.
+            # Flat test-level isolate opts provide backward-compatible defaults
+            # for both user and judge; user_execution / judge_execution override
+            # them selectively.
+            user_opts = {**self.opts.get('execute', {}), **test,
+                         **test.get('user_execution', {})}
 
-            # Filter out non-isolate options
             isolate_option_keys = {
-                'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
+                'extra-time', 'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
             }
-            judge_opts = {k: v for k, v in judge_opts.items() if k in isolate_option_keys}
+            judge_opts = {k: v for k, v in test.items() if k in isolate_option_keys}
+            judge_opts = {**judge_opts, **test.get('judge_execution', {})}
 
             # Run interactive test via proxy
             proxy_result = await self._run_interactive_test_via_proxy(
