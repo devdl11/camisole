@@ -384,15 +384,23 @@ class InteractiveProxy:
         """Clean up processes and resources."""
         for proc_info in [self.user_proc, self.judge_proc]:
             if proc_info and proc_info.proc:
-                if not proc_info.proc.stdin.is_closing():
+                if proc_info.proc.stdin and not proc_info.proc.stdin.is_closing():
                     proc_info.proc.stdin.close()
-                
+
+                if proc_info.proc.returncode is not None:
+                    continue
+
                 try:
                     proc_info.proc.terminate()
                     await asyncio.wait_for(proc_info.proc.wait(), timeout=2.0)
                 except asyncio.TimeoutError:
-                    proc_info.proc.kill()
-                    await proc_info.proc.wait()
+                    try:
+                        proc_info.proc.kill()
+                        await proc_info.proc.wait()
+                    except ProcessLookupError:
+                        pass
+                except ProcessLookupError:
+                    pass
 
     def _handle_timeout(self) -> ProxyResult:
         """Handle proxy timeout."""
