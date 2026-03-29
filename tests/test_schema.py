@@ -80,6 +80,7 @@ int main(void) {
             'fsize': 19,
             'time': 78,
             'wall-time': 404,
+            'extra-time': 1.0,
             'quota': '1,8',
             'mem': 1337,
             'processes': 42,
@@ -105,6 +106,7 @@ int main(void) {
                 'mem': 44444444,
                 'time': 546546,
                 'wall-time': 200,
+                'extra-time': 0.5,
             },
             {},
         ],
@@ -120,6 +122,28 @@ def test_bad_type():
     with pytest.raises(camisole.schema.ValidationError) as e:
         camisole.schema.validate_run(json)
     assert "expected a string or binary data, got an integer" in str(e)
+
+
+def test_extra_time():
+    # extra-time can be set at execute, compile, and per-test levels
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'compile': {'extra-time': 2},
+        'execute': {'extra-time': 1.5},
+        'tests': [{'extra-time': 0.5}],
+    }
+    camisole.schema.validate_run(json)
+
+
+def test_extra_time_bad_type():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'execute': {'extra-time': 'not-a-number'},
+    }
+    with pytest.raises(camisole.schema.ValidationError):
+        camisole.schema.validate_run(json)
 
 
 def test_missing_field():

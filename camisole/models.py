@@ -597,7 +597,7 @@ class InteractiveLang(LangExecution):
                          **test.get('user_execution', {})}
 
             isolate_option_keys = {
-                'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
+                'extra-time', 'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
             }
             judge_opts = {k: v for k, v in test.items() if k in isolate_option_keys}
             judge_opts = {**judge_opts, **test.get('judge_execution', {})}

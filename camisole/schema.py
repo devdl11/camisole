@@ -106,6 +106,7 @@ str_bytes = Union(str, bytes)
 number = Union(float, int)
 
 ISOLATE_OPTS_PROPERTIES = {
+    'extra-time': O(number),
     'fsize': O(int),
     'mem': O(int),
     'processes': O(int),
