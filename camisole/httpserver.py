@@ -129,25 +129,32 @@ async def run_handler(request, data):
     has_judge_lang = 'judge_lang' in data and data['judge_lang']
     
     if has_judge_source and has_judge_lang:
-        # Route to InteractiveLang: use user's language for user execution
+        # Route to InteractiveLang bound to the selected user language.
         lang_name = data['lang'].lower()
-        
-        # Get user language definition
+
         try:
-            user_lang_def = camisole.models.LangExecution._definition_registry[lang_name]
+            user_lang_def = camisole.languages.by_name(lang_name)
         except KeyError:
             raise RuntimeError(f'Incorrect user language {lang_name}')
-        
-        # Create InteractiveLang execution instance
+
+        if user_lang_def.executer is None:
+            raise RuntimeError(f'No executer configured for language {lang_name}')
+
+        camisole.models.InteractiveLang.register_language(user_lang_def)
         exec_instance = camisole.models.InteractiveLang(data)
         return await exec_instance.run()
     else:
         # Standard (non-interactive) mode: use regular language execution
         lang_name = data['lang'].lower()
         try:
-            lang = camisole.languages.by_name(lang_name)(data)
+            lang_def = camisole.languages.by_name(lang_name)
         except KeyError:
             raise RuntimeError('Incorrect language {}'.format(lang_name))
+
+        if lang_def.executer is None:
+            raise RuntimeError(f'No executer configured for language {lang_name}')
+
+        lang = lang_def.executer(data)
 
         return await lang.run()
 
