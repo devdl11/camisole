@@ -28,10 +28,10 @@ from camisole.proxy import (
 )
 
 
-@pytest.mark.asyncio
-async def test_proxy_firewall_allowed_chars():
+def test_proxy_firewall_allowed_chars():
     """Test that firewall correctly validates allowed characters."""
     rules = FirewallRules(allowed_chars=r'[a-z0-9\n]')
+    rules.compile()  # compile regex patterns before calling validate_data
     
     # Valid input
     valid, violation = rules.validate_data(b'hello\n', 0)
@@ -45,10 +45,10 @@ async def test_proxy_firewall_allowed_chars():
     assert violation['character'] == 'H'
 
 
-@pytest.mark.asyncio
-async def test_proxy_firewall_max_line_length():
+def test_proxy_firewall_max_line_length():
     """Test that firewall enforces max line length."""
     rules = FirewallRules(max_line_length=5)
+    rules.compile()
     
     # Valid: line within limit
     valid, violation = rules.validate_data(b'hello', 0)
@@ -60,10 +60,10 @@ async def test_proxy_firewall_max_line_length():
     assert violation['violation_type'] == FirewallViolationType.LINE_TOO_LONG.value
 
 
-@pytest.mark.asyncio
-async def test_proxy_firewall_max_total_bytes():
+def test_proxy_firewall_max_total_bytes():
     """Test that firewall enforces max total bytes limit."""
     rules = FirewallRules(max_total_bytes=10)
+    rules.compile()
     
     # First chunk
     valid, violation = rules.validate_data(b'hello', 0)

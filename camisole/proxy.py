@@ -267,6 +267,7 @@ class InteractiveProxy:
         self.total_judge_bytes_sent = 0
         self.judge_output_buffer = bytearray()
         self.judge_fault_exitcode = judge_fault_exitcode
+        self._firewall_violation: Optional[Dict[str, Any]] = None
 
     async def run(self, user_cmd: List[str], judge_cmd: List[str],
                   user_env: Optional[Dict[str, str]] = None,
@@ -334,14 +335,28 @@ class InteractiveProxy:
 
     async def _forward_io(self):
         """Forward I/O between user and judge processes concurrently."""
+        user_reader = judge_reader = None
         try:
             # Create concurrent tasks for reading from both processes
             user_reader = asyncio.create_task(self._read_process_stream(self.user_proc))
             judge_reader = asyncio.create_task(self._read_process_stream(self.judge_proc))
-            
+
+            # When a process's stdout reaches EOF (it is done writing), signal
+            # the *other* process that no more data is coming by closing its
+            # stdin.  Without this, a process that reads until stdin-EOF (e.g.
+            # `cat`) will wait forever even after the peer has already exited,
+            # causing every non-looping program to hit the global proxy timeout.
+            def _close_stdin(proc_info: Optional[ProxyProcessInfo]):
+                if (proc_info and proc_info.proc.stdin and
+                        not proc_info.proc.stdin.is_closing()):
+                    proc_info.proc.stdin.close()
+
+            user_reader.add_done_callback(lambda _: _close_stdin(self.judge_proc))
+            judge_reader.add_done_callback(lambda _: _close_stdin(self.user_proc))
+
             # Wait for both readers to complete (END OF STREAM)
             await asyncio.gather(user_reader, judge_reader, return_exceptions=True)
-            
+
             # Now wait for both processes to exit
             await asyncio.gather(
                 self.user_proc.proc.wait(),
@@ -350,7 +365,17 @@ class InteractiveProxy:
             )
 
         except asyncio.CancelledError:
-            pass
+            # Cancel child reader tasks to prevent resource leaks (they hold
+            # open file descriptors and poll the process every second), then
+            # re-raise so that asyncio.wait_for() in the caller can correctly
+            # observe the cancellation and raise TimeoutError.  Swallowing
+            # CancelledError here causes wait_for to see the task as "completed
+            # normally" in Python 3.12, making timeout handling silently wrong.
+            if user_reader is not None:
+                user_reader.cancel()
+            if judge_reader is not None:
+                judge_reader.cancel()
+            raise
         except Exception as e:
             logger.exception(f"I/O forwarding error: {e}")
 
@@ -465,7 +490,7 @@ class InteractiveProxy:
 
         verdict = ProxyErrorClass.PASS
 
-        if hasattr(self, '_firewall_violation') and self._firewall_violation:
+        if self._firewall_violation:
             verdict = ProxyErrorClass.FIREWALL_VIOLATION
         elif judge_crashed:
             verdict = ProxyErrorClass.JUDGE_CRASHED
@@ -487,7 +512,7 @@ class InteractiveProxy:
             judge_exit_code=judge_exit_code,
             user_signal=abs(user_exit_code) if user_crashed else None,
             judge_signal=abs(judge_exit_code) if judge_crashed else None,
-            firewall_violation=getattr(self, '_firewall_violation', None),
+            firewall_violation=self._firewall_violation,
             judge_output=bytes(self.judge_output_buffer),
             total_user_bytes_sent=self.total_user_bytes_sent,
             total_judge_bytes_sent=self.total_judge_bytes_sent,
