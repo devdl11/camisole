@@ -9,6 +9,7 @@ import camisole.languages
 import camisole.ref
 import camisole.schema
 import camisole.system
+import camisole.models
 
 TYPE_JSON = 'application/json'
 TYPE_MSGPACK = 'application/msgpack'
@@ -123,13 +124,49 @@ async def run_handler(request, data):
     except camisole.schema.ValidationError as e:
         return {'success': False, 'error': f"malformed payload: {e}"}
 
-    lang_name = data['lang'].lower()
-    try:
-        lang = camisole.languages.by_name(lang_name)(data)
-    except KeyError:
-        raise RuntimeError('Incorrect language {}'.format(lang_name))
+    # Check if this is an interactive judge mode request
+    has_judge_source = 'judge_source' in data and data['judge_source']
+    has_judge_lang = 'judge_lang' in data and data['judge_lang']
+    
+    if has_judge_source and has_judge_lang:
+        # Route to InteractiveLang bound to the selected user language.
+        lang_name = data['lang'].lower()
 
-    return await lang.run()
+        try:
+            user_lang_def = camisole.languages.by_name(lang_name)
+        except KeyError:
+            raise RuntimeError(f'Incorrect user language {lang_name}')
+
+        if user_lang_def.executer is None:
+            raise RuntimeError(f'No executer configured for language {lang_name}')
+
+        # Create a per-request subclass of InteractiveLang with its own 'df'
+        # class attribute.  This avoids the race condition that would occur if
+        # we called InteractiveLang.register_language(user_lang_def) directly:
+        # that method sets cls.df on the *shared* InteractiveLang class, so a
+        # second concurrent request could overwrite it before the first request
+        # finishes executing, causing code to run with the wrong language.
+        interactive_cls = type(
+            f'InteractiveLang_{lang_name}',
+            (camisole.models.InteractiveLang,),
+            {'df': user_lang_def},
+        )
+        exec_instance = interactive_cls(data)
+        return await exec_instance.run()
+    else:
+        # Standard (non-interactive) mode: use regular language execution
+        lang_name = data['lang'].lower()
+        try:
+            lang_def = camisole.languages.by_name(lang_name)
+        except KeyError:
+            raise RuntimeError('Incorrect language {}'.format(lang_name))
+
+        if lang_def.executer is None:
+            raise RuntimeError(f'No executer configured for language {lang_name}')
+
+        lang = lang_def.executer(data)
+
+        return await lang.run()
 
 
 @json_msgpack_handler

@@ -157,6 +157,7 @@ class Isolator:
 
         return self
 
+
     async def __aexit__(self, exc, value, tb):
         meta_defaults = {
             'cg-mem': 0,
@@ -229,6 +230,7 @@ class Isolator:
 
         self.meta_file.__exit__(exc, value, tb)
 
+
     async def run(self, cmdline, data=None, env=None, merge_outputs=False, **kwargs):
         cmd_run = self.cmd_base[:]
         cmd_run += list(
@@ -298,6 +300,7 @@ class Isolator:
                 self.isolate_stderr,
                 message="Error while reading stdout/stderr: " + e.message,
             )
+
 
     @cached_classmethod
     def isolate_conf(cls):

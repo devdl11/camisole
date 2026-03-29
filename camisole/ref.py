@@ -5,7 +5,10 @@ async def test(lang_name, **kw):
     expected = b'42\n'
 
     lang_cls = camisole.languages.by_name(lang_name)
-    lang = lang_cls({'source': lang_cls.reference_source, 'tests': [{}], **kw})
+    if lang_cls.executer is None:
+        return False, {'error': f'No executer configured for language {lang_name}'}
+
+    lang = lang_cls.executer({'source': lang_cls.reference_source, 'tests': [{}], **kw})
     raw_result = await lang.run()
 
     try:
