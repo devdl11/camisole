@@ -734,11 +734,15 @@ class InteractiveLang(LangExecution):
                 user_prog_exit = user_meta.get('exitcode')
                 judge_prog_exit = judge_meta.get('exitcode')
 
-                # Only trust program exit codes when isolate status is OK.
-                # Otherwise isolate may report default exitcode=0 placeholders.
-                if user_status == 'OK' and isinstance(user_prog_exit, int):
+                # Trust program exit codes when isolate status is OK or
+                # RUNTIME_ERROR.  RUNTIME_ERROR means the program exited with a
+                # non-zero code, and isolate records that exit code accurately in
+                # its meta file.  For other statuses (TIMED_OUT, SIGNALED,
+                # OUT_OF_MEMORY, INTERNAL_ERROR) isolate may write the default
+                # exitcode=0 placeholder, so those are not used.
+                if user_status in ('OK', 'RUNTIME_ERROR') and isinstance(user_prog_exit, int):
                     proxy_result.user_exit_code = user_prog_exit
-                if judge_status == 'OK' and isinstance(judge_prog_exit, int):
+                if judge_status in ('OK', 'RUNTIME_ERROR') and isinstance(judge_prog_exit, int):
                     proxy_result.judge_exit_code = judge_prog_exit
 
                 user_exitsig = user_meta.get('exitsig')
