@@ -70,6 +70,12 @@ class FirewallRules:
     format_rules: List[str] = field(default_factory=list)  # custom validator names
     violation_action: str = "STOP"  # "STOP" or "WARN"
     custom_validators: Dict[str, Callable[[bytes], bool]] = field(default_factory=dict)
+    # Internal state: tracks how many bytes have been received in the current
+    # (not yet newline-terminated) line across consecutive read chunks.
+    # Without this counter a user process could bypass the max_line_length limit
+    # by sending a long line in multiple small writes – each chunk would be
+    # under the limit when checked individually.  Not part of the public API.
+    _current_line_length: int = field(default=0, init=False, repr=False)
 
     def compile(self):
         """Pre-compile regex patterns for efficiency."""
@@ -90,33 +96,45 @@ class FirewallRules:
         if not data:
             return True, None
 
-        # Check character whitelist
+        # Check character whitelist.
+        # Decode as UTF-8 so multi-byte characters (e.g. é = \xc3\xa9) are
+        # validated as a single codepoint rather than as two Latin-1 bytes.
         if isinstance(self.allowed_chars, re.Pattern):
-            for i, byte_val in enumerate(data):
-                    try:
-                        char = chr(byte_val)
-                    except (ValueError, OverflowError):
-                        char = f"\\x{byte_val:02x}"
-                
-                    if not self.allowed_chars.match(char):
-                        return False, {
-                            'violation_type': FirewallViolationType.INVALID_CHARACTER.value,
-                            'position': i,
-                            'character': char,
-                            'byte': byte_val,
-                        }
-
-        # Check line length
-        if self.max_line_length:
-            lines = data.split(b'\n')
-            for line_idx, line in enumerate(lines):
-                if len(line) > self.max_line_length:
+            try:
+                text = data.decode('utf-8')
+            except UnicodeDecodeError:
+                # Data contains invalid UTF-8 sequences – treat as a violation.
+                return False, {
+                    'violation_type': FirewallViolationType.INVALID_CHARACTER.value,
+                    'position': 0,
+                    'character': None,
+                    'byte': None,
+                    'detail': 'invalid UTF-8 encoding',
+                }
+            for i, char in enumerate(text):
+                if not self.allowed_chars.match(char):
                     return False, {
-                        'violation_type': FirewallViolationType.LINE_TOO_LONG.value,
-                        'line_index': line_idx,
-                        'line_length': len(line),
-                        'max_allowed': self.max_line_length,
+                        'violation_type': FirewallViolationType.INVALID_CHARACTER.value,
+                        'position': i,
+                        'character': char,
+                        'byte': ord(char),
                     }
+
+        # Check line length using a stateful counter so that a long line split
+        # across multiple chunks (each individually within the limit) is still
+        # caught correctly.
+        if self.max_line_length:
+            for byte in data:
+                if byte == ord('\n'):
+                    self._current_line_length = 0
+                else:
+                    self._current_line_length += 1
+                    if self._current_line_length > self.max_line_length:
+                        return False, {
+                            'violation_type': FirewallViolationType.LINE_TOO_LONG.value,
+                            'line_length': self._current_line_length,
+                            'max_allowed': self.max_line_length,
+                        }
 
         # Check total bytes
         new_total = total_sent + len(data)

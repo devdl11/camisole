@@ -698,6 +698,17 @@ class InteractiveLang(LangExecution):
                 # Run proxy
                 proxy_result = await proxy.run(user_cmd, judge_cmd)
 
+                # Populate isolator stdout/stderr so that Isolator.__aexit__
+                # produces a well-formed info dict.  Because the interactive
+                # proxy streams I/O directly through pipes (bypassing
+                # isolator.run()), the Isolator never sets these attributes;
+                # they remain None and would cause NoneType errors anywhere
+                # info['stdout'] or info['stderr'] is consumed downstream.
+                user_isolator.stdout = b''
+                user_isolator.stderr = b''
+                judge_isolator.stdout = bytes(proxy.judge_output_buffer)
+                judge_isolator.stderr = b''
+
             # Isolator metadata is parsed on __aexit__. Use it to retrieve the
             # real sandboxed program exit codes (not isolate wrapper exit code).
             if proxy_result is not None:

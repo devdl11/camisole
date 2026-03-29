@@ -140,8 +140,18 @@ async def run_handler(request, data):
         if user_lang_def.executer is None:
             raise RuntimeError(f'No executer configured for language {lang_name}')
 
-        camisole.models.InteractiveLang.register_language(user_lang_def)
-        exec_instance = camisole.models.InteractiveLang(data)
+        # Create a per-request subclass of InteractiveLang with its own 'df'
+        # class attribute.  This avoids the race condition that would occur if
+        # we called InteractiveLang.register_language(user_lang_def) directly:
+        # that method sets cls.df on the *shared* InteractiveLang class, so a
+        # second concurrent request could overwrite it before the first request
+        # finishes executing, causing code to run with the wrong language.
+        interactive_cls = type(
+            f'InteractiveLang_{lang_name}',
+            (camisole.models.InteractiveLang,),
+            {'df': user_lang_def},
+        )
+        exec_instance = interactive_cls(data)
         return await exec_instance.run()
     else:
         # Standard (non-interactive) mode: use regular language execution
