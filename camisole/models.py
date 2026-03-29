@@ -18,6 +18,7 @@
 # along with Prologin-SADM.  If not, see <http://www.gnu.org/licenses/>.
 
 import functools
+import itertools
 import logging
 import os
 import re
@@ -651,7 +652,6 @@ class InteractiveLang(LangExecution):
                 
                 # Determine judge language for execution
                 judge_lang = self.opts.get('judge_lang', '').lower()
-                judge_exec_cls = LangExecution._registry.get(judge_lang)
                 judge_df = LangExecution._definition_registry.get(judge_lang)
                 
                 if not judge_df:
@@ -664,8 +664,21 @@ class InteractiveLang(LangExecution):
                 env_judge = {**env_judge, **(judge_df.interpreter.env if judge_df.interpreter else {})}
 
                 # Build commands
-                user_cmd = self.execute_command(str(compiled_user))
-                judge_cmd = self._judge_execute_command(str(compiled_judge), judge_df)
+                user_inner_cmd = self.execute_command(str(compiled_user))
+                judge_inner_cmd = self._judge_execute_command(str(compiled_judge), judge_df)
+
+                # IMPORTANT: interactive processes must still run inside isolate.
+                # We wrap both commands with isolate --run so /box paths are valid.
+                user_cmd = self._build_interactive_isolate_cmd(
+                    user_isolator,
+                    user_inner_cmd,
+                    env=env_user,
+                )
+                judge_cmd = self._build_interactive_isolate_cmd(
+                    judge_isolator,
+                    judge_inner_cmd,
+                    env=env_judge,
+                )
 
                 # Create proxy with firewall rules
                 proxy = camisole.proxy.InteractiveProxy(
@@ -675,7 +688,7 @@ class InteractiveLang(LangExecution):
                 )
 
                 # Run proxy
-                return await proxy.run(user_cmd, judge_cmd, env_user, env_judge)
+                return await proxy.run(user_cmd, judge_cmd)
 
         except Exception as e:
             logging.error(f"Error in interactive test: {e}")
@@ -708,3 +721,40 @@ class InteractiveLang(LangExecution):
             cmd += [judge_df.interpreter.cmd] + judge_df.interpreter.opts
         
         return cmd + [self.filter_box_prefix(judge_path)]
+
+    def _build_interactive_isolate_cmd(self, isolator, inner_cmd: List[str], env=None) -> List[str]:
+        """
+        Build an isolate --run command suitable for streaming interactive I/O.
+
+        Unlike Isolator.run(), we do not force --stdout/--stderr file redirection,
+        so the proxy can stream pipes directly between user and judge.
+        """
+        cmd_run = isolator.cmd_base[:]
+        cmd_run += list(
+            itertools.chain(
+                *[('-d', d) for d in isolator.allowed_dirs]
+            )
+        )
+
+        for opt in camisole.isolate.CAMISOLE_OPTIONS:
+            v = isolator.opts.get(opt)
+            iopt = camisole.isolate.CAMISOLE_TO_ISOLATE_OPTS.get(opt, opt)
+
+            if v is not None:
+                cmd_run.append(f'--{iopt}={v!s}')
+            elif iopt == 'processes':
+                cmd_run.append('-p')
+
+        for e in ['PATH', 'LD_LIBRARY_PATH', 'LANG']:
+            env_value = os.getenv(e)
+            if env_value:
+                cmd_run += ['--env', e + '=' + env_value]
+
+        for key, value in (env or {}).items():
+            cmd_run += [f'--env={key}={value}']
+
+        cmd_run += ['--meta={}'.format(isolator.meta_file.name)]
+        cmd_run += ['--run', '--']
+        cmd_run += inner_cmd
+
+        return cmd_run
