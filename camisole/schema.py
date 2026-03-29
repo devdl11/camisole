@@ -151,6 +151,8 @@ TEST_PROPERTIES = {
     **EXECUTE_PROPERTIES,
     'judge_fault_exitcode': O(int),  # optional per-test override
     'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
+    'user_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for user code
+    'judge_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for judge code
 }
 
 RUN_SCHEMA = {

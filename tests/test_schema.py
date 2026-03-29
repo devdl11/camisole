@@ -129,3 +129,97 @@ def test_missing_field():
     with pytest.raises(camisole.schema.ValidationError) as e:
         camisole.schema.validate_run(json)
     assert "expected a string, got nothing" in str(e)
+
+
+def test_per_test_user_execution():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'tests': [
+            {
+                'name': 'test01',
+                'stdin': 'hello',
+                'user_execution': {
+                    'time': 2.0,
+                    'mem': 128000000,
+                    'wall-time': 5.0,
+                },
+            },
+        ],
+    }
+    camisole.schema.validate_run(json)
+
+
+def test_per_test_judge_execution():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'judge_source': 'import sys; sys.exit(0)',
+        'judge_lang': 'python',
+        'tests': [
+            {
+                'name': 'test01',
+                'judge_execution': {
+                    'time': 10.0,
+                    'mem': 256000000,
+                },
+            },
+        ],
+    }
+    camisole.schema.validate_run(json)
+
+
+def test_per_test_user_and_judge_execution():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'judge_source': 'import sys; sys.exit(0)',
+        'judge_lang': 'python',
+        'tests': [
+            {
+                'name': 'test01',
+                'user_execution': {
+                    'time': 2.0,
+                    'mem': 64000000,
+                },
+                'judge_execution': {
+                    'time': 10.0,
+                    'mem': 256000000,
+                    'processes': 1,
+                },
+            },
+        ],
+    }
+    camisole.schema.validate_run(json)
+
+
+def test_per_test_execution_bad_type():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'tests': [
+            {
+                'user_execution': {
+                    'time': 'not-a-number',
+                },
+            },
+        ],
+    }
+    with pytest.raises(camisole.schema.ValidationError):
+        camisole.schema.validate_run(json)
+
+
+def test_per_test_judge_execution_bad_type():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'tests': [
+            {
+                'judge_execution': {
+                    'mem': 'not-an-int',
+                },
+            },
+        ],
+    }
+    with pytest.raises(camisole.schema.ValidationError):
+        camisole.schema.validate_run(json)
