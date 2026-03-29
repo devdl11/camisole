@@ -15,7 +15,7 @@ def test_interactive_proxy_dummy_pass():
     user_cmd = [sys.executable, str(DUMMY_DIR / "interactive_user_ok.py")]
     judge_cmd = [sys.executable, str(DUMMY_DIR / "interactive_judge_line.py")]
 
-    proxy = InteractiveProxy(timeout=5.0)
+    proxy = InteractiveProxy(timeout=5.0, judge_fault_exitcode=42)
     result = asyncio.run(proxy.run(user_cmd, judge_cmd))
 
     assert result.verdict == ProxyErrorClass.PASS
@@ -39,3 +39,24 @@ def test_interactive_proxy_dummy_firewall_violation():
     assert result.verdict == ProxyErrorClass.FIREWALL_VIOLATION
     assert result.firewall_violation is not None
     assert result.firewall_violation["violation_type"] == "INVALID_CHARACTER"
+
+
+def test_interactive_proxy_dummy_fault_when_judge_exits_custom_code():
+    """If firewall allows HELLO, judge should exit with custom WA code -> FAULT verdict."""
+    user_cmd = [sys.executable, str(DUMMY_DIR / "interactive_user_bad.py")]
+    judge_cmd = [sys.executable, str(DUMMY_DIR / "interactive_judge_line.py")]
+
+    rules = FirewallRules(
+        allowed_chars=r"[A-Z\n]",
+        violation_action="STOP",
+    )
+
+    proxy = InteractiveProxy(
+        firewall_rules=rules,
+        timeout=5.0,
+        judge_fault_exitcode=42,
+    )
+    result = asyncio.run(proxy.run(user_cmd, judge_cmd))
+
+    assert result.verdict == ProxyErrorClass.FAULT
+    assert result.judge_exit_code == 42

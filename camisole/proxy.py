@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 class ProxyErrorClass(Enum):
     """Error classifications for proxy execution."""
     PASS = "PASS"
+    FAULT = "FAULT"
     JUDGE_RUNTIME_ERROR = "JUDGE_RUNTIME_ERROR"
     USER_RUNTIME_ERROR = "USER_RUNTIME_ERROR"
     JUDGE_COMPILATION_ERROR = "JUDGE_COMPILATION_ERROR"
@@ -225,8 +226,9 @@ class InteractiveProxy:
     - User → Judge: filtered through firewall rules
     """
 
-    def __init__(self, firewall_rules: Optional[FirewallRules] = None, 
-                 record_transcript: bool = False, timeout: float = 30.0):
+    def __init__(self, firewall_rules: Optional[FirewallRules] = None,
+                 record_transcript: bool = False, timeout: float = 30.0,
+                 judge_fault_exitcode: Optional[int] = None):
         """
         Initialize proxy.
         
@@ -234,6 +236,7 @@ class InteractiveProxy:
             firewall_rules: Optional firewall rules for user→judge filtering
             record_transcript: If True, record all I/O for verbose output
             timeout: Overall timeout for proxy execution (seconds)
+            judge_fault_exitcode: Judge exit code that means wrong answer (FAULT)
         """
         self.firewall_rules = firewall_rules or FirewallRules()
         self.firewall_rules.compile()
@@ -244,6 +247,8 @@ class InteractiveProxy:
         self.judge_proc: Optional[ProxyProcessInfo] = None
         self.total_user_bytes_sent = 0
         self.total_judge_bytes_sent = 0
+        self.judge_output_buffer = bytearray()
+        self.judge_fault_exitcode = judge_fault_exitcode
 
     async def run(self, user_cmd: List[str], judge_cmd: List[str],
                   user_env: Optional[Dict[str, str]] = None,
@@ -345,6 +350,7 @@ class InteractiveProxy:
                 
                 if proc_info.name == "judge":
                     # Judge → User: transparent passthrough
+                    self.judge_output_buffer.extend(data)
                     self._write_to_process(self.user_proc, data)
                     self.total_judge_bytes_sent += len(data)
                 elif proc_info.name == "user":
@@ -439,6 +445,9 @@ class InteractiveProxy:
             verdict = ProxyErrorClass.JUDGE_CRASHED
         elif user_crashed:
             verdict = ProxyErrorClass.USER_CRASHED
+        elif (self.judge_fault_exitcode is not None and
+              judge_exit_code == self.judge_fault_exitcode):
+            verdict = ProxyErrorClass.FAULT
         elif judge_exit_code != 0:
             verdict = ProxyErrorClass.JUDGE_RUNTIME_ERROR
         elif user_exit_code != 0:
@@ -453,6 +462,7 @@ class InteractiveProxy:
             user_signal=abs(user_exit_code) if user_crashed else None,
             judge_signal=abs(judge_exit_code) if judge_crashed else None,
             firewall_violation=getattr(self, '_firewall_violation', None),
+            judge_output=bytes(self.judge_output_buffer),
             total_user_bytes_sent=self.total_user_bytes_sent,
             total_judge_bytes_sent=self.total_judge_bytes_sent,
             io_transcript=self.transcript,

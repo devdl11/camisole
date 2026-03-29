@@ -122,6 +122,7 @@ JUDGE_REQUEST_PROPERTIES = {
     'judge_source': O(str_bytes),  # judge program source code
     'judge_lang': O(str),          # judge program language
     'judge_compile': O(ISOLATE_OPTS_PROPERTIES),  # isolate options for judge compilation
+    'judge_fault_exitcode': O(int),  # custom judge exit code meaning WRONG ANSWER / FAULT
 }
 
 # Test-level judge configuration (enables judge for a specific test)
@@ -148,6 +149,7 @@ TEST_PROPERTIES = {
     'name': O(str),
     'fatal': O(bool),
     **EXECUTE_PROPERTIES,
+    'judge_fault_exitcode': O(int),  # optional per-test override
     'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
 }
 

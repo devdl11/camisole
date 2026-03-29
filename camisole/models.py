@@ -601,7 +601,11 @@ class InteractiveLang(LangExecution):
             proxy_result = await self._run_interactive_test_via_proxy(
                 user_binary, user_opts,
                 judge_binary, judge_opts,
-                firewall_rules=firewall_rules
+                firewall_rules=firewall_rules,
+                judge_fault_exitcode=test.get(
+                    'judge_fault_exitcode',
+                    self.opts.get('judge_fault_exitcode')
+                ),
             )
 
             # Format result
@@ -620,7 +624,8 @@ class InteractiveLang(LangExecution):
 
     async def _run_interactive_test_via_proxy(self, user_binary, user_opts,
                                              judge_binary, judge_opts,
-                                             firewall_rules=None):
+                                             firewall_rules=None,
+                                             judge_fault_exitcode=None):
         """
         Run a single interactive test via proxy.
         
@@ -684,7 +689,8 @@ class InteractiveLang(LangExecution):
                 proxy = camisole.proxy.InteractiveProxy(
                     firewall_rules=firewall_rules,
                     record_transcript=False,  # can make configurable
-                    timeout=30.0  # can make configurable via opts
+                    timeout=30.0,  # can make configurable via opts
+                    judge_fault_exitcode=judge_fault_exitcode,
                 )
 
                 # Run proxy
