@@ -339,11 +339,21 @@ class InteractiveProxy:
     async def _read_process_stream(self, proc_info: ProxyProcessInfo):
         """Read all available data from a process and forward appropriately."""
         try:
-            while not proc_info.proc.stdout.at_eof():
-                data = await asyncio.wait_for(
-                    proc_info.proc.stdout.read(4096),
-                    timeout=1.0
-                )
+            while True:
+                if proc_info.proc.stdout.at_eof():
+                    break
+
+                try:
+                    data = await asyncio.wait_for(
+                        proc_info.proc.stdout.read(4096),
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    # No data yet: keep waiting until global proxy timeout
+                    # or process termination.
+                    if proc_info.proc.returncode is not None:
+                        break
+                    continue
                 
                 if not data:
                     break
@@ -372,9 +382,7 @@ class InteractiveProxy:
                     
                     self._write_to_process(self.judge_proc, data)
                     self.total_user_bytes_sent += len(data)
-                    
-        except asyncio.TimeoutError:
-            pass
+
         except Exception as e:
             logger.warning(f"Error reading from {proc_info.name}: {e}")
 

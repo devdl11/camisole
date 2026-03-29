@@ -704,13 +704,40 @@ class InteractiveLang(LangExecution):
                 user_meta = user_isolator.meta or {}
                 judge_meta = judge_isolator.meta or {}
 
+                user_status = user_meta.get('status')
+                judge_status = judge_meta.get('status')
+
+                # If isolate reports hard failures, trust these statuses first.
+                if proxy_result.firewall_violation is None:
+                    if user_status == 'TIMED_OUT':
+                        proxy_result.verdict = camisole.proxy.ProxyErrorClass.USER_TIMEOUT
+                    elif judge_status == 'TIMED_OUT':
+                        proxy_result.verdict = camisole.proxy.ProxyErrorClass.JUDGE_TIMEOUT
+                    elif user_status == 'OUT_OF_MEMORY':
+                        proxy_result.verdict = camisole.proxy.ProxyErrorClass.RESOURCE_LIMIT_EXCEEDED
+                        proxy_result.resource_limit_exceeded = 'user_memory'
+                    elif judge_status == 'OUT_OF_MEMORY':
+                        proxy_result.verdict = camisole.proxy.ProxyErrorClass.RESOURCE_LIMIT_EXCEEDED
+                        proxy_result.resource_limit_exceeded = 'judge_memory'
+
                 user_prog_exit = user_meta.get('exitcode')
                 judge_prog_exit = judge_meta.get('exitcode')
 
-                if isinstance(user_prog_exit, int):
+                # Only trust program exit codes when isolate status is OK.
+                # Otherwise isolate may report default exitcode=0 placeholders.
+                if user_status == 'OK' and isinstance(user_prog_exit, int):
                     proxy_result.user_exit_code = user_prog_exit
-                if isinstance(judge_prog_exit, int):
+                if judge_status == 'OK' and isinstance(judge_prog_exit, int):
                     proxy_result.judge_exit_code = judge_prog_exit
+
+                user_exitsig = user_meta.get('exitsig')
+                judge_exitsig = judge_meta.get('exitsig')
+                if isinstance(user_exitsig, int) and user_exitsig > 0:
+                    proxy_result.user_crashed = True
+                    proxy_result.user_signal = user_exitsig
+                if isinstance(judge_exitsig, int) and judge_exitsig > 0:
+                    proxy_result.judge_crashed = True
+                    proxy_result.judge_signal = judge_exitsig
 
                 # Honor custom judge fault code using real program exit code.
                 if (
@@ -724,6 +751,7 @@ class InteractiveLang(LangExecution):
                     proxy_result.verdict == camisole.proxy.ProxyErrorClass.JUDGE_RUNTIME_ERROR
                     and isinstance(proxy_result.judge_exit_code, int)
                     and proxy_result.judge_exit_code == 0
+                    and judge_status == 'OK'
                 ):
                     # If isolate wrapper failed but program exit code is 0,
                     # normalize verdict to PASS.
