@@ -642,6 +642,8 @@ class InteractiveLang(LangExecution):
             allowed_dirs=self.get_allowed_dirs())
 
         try:
+            proxy_result = None
+
             async with user_isolator, judge_isolator:
                 # Set up user sandbox
                 assert user_isolator.path is not None
@@ -694,7 +696,45 @@ class InteractiveLang(LangExecution):
                 )
 
                 # Run proxy
-                return await proxy.run(user_cmd, judge_cmd)
+                proxy_result = await proxy.run(user_cmd, judge_cmd)
+
+            # Isolator metadata is parsed on __aexit__. Use it to retrieve the
+            # real sandboxed program exit codes (not isolate wrapper exit code).
+            if proxy_result is not None:
+                user_meta = user_isolator.meta or {}
+                judge_meta = judge_isolator.meta or {}
+
+                user_prog_exit = user_meta.get('exitcode')
+                judge_prog_exit = judge_meta.get('exitcode')
+
+                if isinstance(user_prog_exit, int):
+                    proxy_result.user_exit_code = user_prog_exit
+                if isinstance(judge_prog_exit, int):
+                    proxy_result.judge_exit_code = judge_prog_exit
+
+                # Honor custom judge fault code using real program exit code.
+                if (
+                    judge_fault_exitcode is not None
+                    and isinstance(proxy_result.judge_exit_code, int)
+                    and proxy_result.judge_exit_code == judge_fault_exitcode
+                    and proxy_result.firewall_violation is None
+                ):
+                    proxy_result.verdict = camisole.proxy.ProxyErrorClass.FAULT
+                elif (
+                    proxy_result.verdict == camisole.proxy.ProxyErrorClass.JUDGE_RUNTIME_ERROR
+                    and isinstance(proxy_result.judge_exit_code, int)
+                    and proxy_result.judge_exit_code == 0
+                ):
+                    # If isolate wrapper failed but program exit code is 0,
+                    # normalize verdict to PASS.
+                    proxy_result.verdict = camisole.proxy.ProxyErrorClass.PASS
+
+                return proxy_result
+
+            return camisole.proxy.ProxyResult(
+                verdict=camisole.proxy.ProxyErrorClass.PROXY_COMMUNICATION_ERROR,
+                error_message='interactive proxy returned no result'
+            )
 
         except Exception as e:
             logging.error(f"Error in interactive test: {e}")
