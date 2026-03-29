@@ -537,12 +537,20 @@ class InteractiveLang(LangExecution):
         }
         judge_exec = judge_exec_cls(judge_opts)
 
-        # Compile judge code
-        judge_cretcode, judge_info, judge_binary = await judge_exec.compile()
-
         # Store judge compilation info in result
         if 'compile' not in result:
             result['compile'] = {}
+
+        # Interpreted language: no compile stage, use source directly.
+        if judge_exec.df.compiler is None:
+            result['compile']['judge'] = {
+                'status': 'OK',
+                'message': 'judge language has no compiler; using source directly',
+            }
+            return camisole.utils.force_bytes(judge_source)
+
+        # Compiled language: compile judge code.
+        judge_cretcode, judge_info, judge_binary = await judge_exec.compile()
         result['compile']['judge'] = judge_info
 
         if judge_cretcode != 0:
