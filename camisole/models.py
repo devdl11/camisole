@@ -602,11 +602,40 @@ class InteractiveLang(LangExecution):
             judge_opts = {k: v for k, v in test.items() if k in isolate_option_keys}
             judge_opts = {**judge_opts, **test.get('judge_execution', {})}
 
+            # Initial stdin injection for interactive mode.
+            # Backward compatibility: legacy "stdin" maps to user initial stdin.
+            user_initial_stdin = (
+                test.get('stdin_user')
+                if test.get('stdin_user') is not None else
+                test.get('stdin')
+            )
+            if user_initial_stdin is None:
+                execute_defaults = self.opts.get('execute', {})
+                user_initial_stdin = (
+                    execute_defaults.get('stdin_user')
+                    if execute_defaults.get('stdin_user') is not None else
+                    execute_defaults.get('stdin')
+                )
+            if user_initial_stdin is None:
+                user_initial_stdin = self.opts.get('stdin_user')
+
+            judge_initial_stdin = (
+                test.get('stdin_judge')
+                if test.get('stdin_judge') is not None else None
+            )
+            if judge_initial_stdin is None:
+                execute_defaults = self.opts.get('execute', {})
+                judge_initial_stdin = execute_defaults.get('stdin_judge')
+            if judge_initial_stdin is None:
+                judge_initial_stdin = self.opts.get('stdin_judge')
+
             # Run interactive test via proxy
             proxy_result = await self._run_interactive_test_via_proxy(
                 user_binary, user_opts,
                 judge_binary, judge_opts,
                 firewall_rules=firewall_rules,
+                user_initial_stdin=user_initial_stdin,
+                judge_initial_stdin=judge_initial_stdin,
                 judge_fault_exitcode=test.get(
                     'judge_fault_exitcode',
                     self.opts.get('judge_fault_exitcode')
@@ -630,6 +659,8 @@ class InteractiveLang(LangExecution):
     async def _run_interactive_test_via_proxy(self, user_binary, user_opts,
                                              judge_binary, judge_opts,
                                              firewall_rules=None,
+                                             user_initial_stdin=None,
+                                             judge_initial_stdin=None,
                                              judge_fault_exitcode=None):
         """
         Run a single interactive test via proxy.
@@ -701,7 +732,18 @@ class InteractiveLang(LangExecution):
                 )
 
                 # Run proxy
-                proxy_result = await proxy.run(user_cmd, judge_cmd)
+                proxy_result = await proxy.run(
+                    user_cmd,
+                    judge_cmd,
+                    user_initial_stdin=(
+                        camisole.utils.force_bytes(user_initial_stdin)
+                        if user_initial_stdin is not None else None
+                    ),
+                    judge_initial_stdin=(
+                        camisole.utils.force_bytes(judge_initial_stdin)
+                        if judge_initial_stdin is not None else None
+                    ),
+                )
 
                 # Populate isolator stdout/stderr so that Isolator.__aexit__
                 # produces a well-formed info dict.  Because the interactive

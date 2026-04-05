@@ -19,6 +19,30 @@ Host and port are customizable::
 
     $ camisole serve -h 0.0.0.0 -p 9000
 
+.. _commands-webui:
+
+``camisole webui``
+------------------
+
+Run a browser-based interface to build and send requests to the judge
+``/run`` endpoint::
+
+    $ camisole webui
+
+By default, the UI is served on ``127.0.0.1:42921`` and forwards requests to
+``http://127.0.0.1:42920/run``.
+
+You can customize both addresses::
+
+    $ camisole webui -h 0.0.0.0 -p 9001 --judge-url http://127.0.0.1:42920/run
+
+The web interface provides these payload modes:
+
+- simple run (``lang`` + ``source``)
+- run with tests JSON
+- interactive judge (``judge_lang`` + ``judge_source``)
+- raw payload JSON passthrough
+
 .. _commands-languages:
 
 ``camisole languages``

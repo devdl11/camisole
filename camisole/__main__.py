@@ -8,7 +8,7 @@ import yaml
 
 from camisole.conf import conf
 from camisole.languages import load_builtins, load_from_environ
-from camisole.progs import languages, test, serve, benchmark
+from camisole.progs import benchmark, languages, serve, test, webui
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
     cmd = parser.add_subparsers(dest='command')
     commands = dict(
                     getattr(module, 'build')(cmd)
-                        for module in (languages, test, serve, benchmark)
+                        for module in (languages, test, serve, benchmark, webui)
                 )
 
     args = parser.parse_args()

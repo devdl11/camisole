@@ -124,6 +124,8 @@ JUDGE_REQUEST_PROPERTIES = {
     'judge_lang': O(str),          # judge program language
     'judge_compile': O(ISOLATE_OPTS_PROPERTIES),  # isolate options for judge compilation
     'judge_fault_exitcode': O(int),  # custom judge exit code meaning WRONG ANSWER / FAULT
+    'stdin_user': O(str_bytes),  # initial stdin injected into user process (interactive mode)
+    'stdin_judge': O(str_bytes),  # initial stdin injected into judge process (interactive mode)
 }
 
 # Test-level judge configuration (enables judge for a specific test)
@@ -142,6 +144,8 @@ FIREWALL_PROPERTIES = {
 
 EXECUTE_PROPERTIES = {
     'stdin': O(str_bytes),
+    'stdin_user': O(str_bytes),
+    'stdin_judge': O(str_bytes),
     **JUDGE_TEST_PROPERTIES,  # test-level judge enable flag
     **ISOLATE_OPTS_PROPERTIES,
 }

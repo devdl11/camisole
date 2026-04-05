@@ -271,7 +271,9 @@ class InteractiveProxy:
 
     async def run(self, user_cmd: List[str], judge_cmd: List[str],
                   user_env: Optional[Dict[str, str]] = None,
-                  judge_env: Optional[Dict[str, str]] = None) -> ProxyResult:
+                  judge_env: Optional[Dict[str, str]] = None,
+                  user_initial_stdin: Optional[bytes] = None,
+                  judge_initial_stdin: Optional[bytes] = None) -> ProxyResult:
         """
         Run user and judge processes with I/O mediation.
         
@@ -280,6 +282,8 @@ class InteractiveProxy:
             judge_cmd: Command to execute judge code
             user_env: Environment variables for user process
             judge_env: Environment variables for judge process
+            user_initial_stdin: Optional initial input written to user stdin
+            judge_initial_stdin: Optional initial input written to judge stdin
             
         Returns:
             ProxyResult with verdict and details
@@ -288,6 +292,10 @@ class InteractiveProxy:
             # Spawn both processes
             self.user_proc = await self._spawn_process(user_cmd, "user", user_env)
             self.judge_proc = await self._spawn_process(judge_cmd, "judge", judge_env)
+
+            # Optionally preload stdin streams before interactive forwarding starts.
+            await self._send_initial_stdin(self.user_proc, user_initial_stdin)
+            await self._send_initial_stdin(self.judge_proc, judge_initial_stdin)
 
             # Set up I/O forwarding tasks
             forward_task = asyncio.create_task(self._forward_io())
@@ -436,6 +444,25 @@ class InteractiveProxy:
                 proc_info.proc.stdin.write(data)
             except Exception as e:
                 logger.warning(f"Error writing to {proc_info.name}: {e}")
+
+    async def _send_initial_stdin(self, proc_info: ProxyProcessInfo,
+                                  data: Optional[bytes]):
+        """Send optional initial stdin payload to a process."""
+        if not data:
+            return
+
+        if proc_info.proc.stdin is None or proc_info.proc.stdin.is_closing():
+            logger.warning(
+                "Cannot send initial stdin to %s: stdin is unavailable",
+                proc_info.name,
+            )
+            return
+
+        try:
+            proc_info.proc.stdin.write(data)
+            await proc_info.proc.stdin.drain()
+        except Exception as e:
+            logger.warning(f"Error writing initial stdin to {proc_info.name}: {e}")
 
     async def _cleanup(self):
         """Clean up processes and resources."""

@@ -247,3 +247,37 @@ def test_per_test_judge_execution_bad_type():
     }
     with pytest.raises(camisole.schema.ValidationError):
         camisole.schema.validate_run(json)
+
+
+def test_interactive_initial_stdin_fields():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'judge_source': 'import sys; sys.exit(0)',
+        'judge_lang': 'python',
+        'stdin_user': 'seed-for-user',
+        'stdin_judge': 'seed-for-judge',
+        'execute': {
+            'stdin_user': 'default-user-seed',
+            'stdin_judge': 'default-judge-seed',
+        },
+        'tests': [
+            {
+                'stdin_user': 'test-user-seed',
+                'stdin_judge': 'test-judge-seed',
+            },
+        ],
+    }
+    camisole.schema.validate_run(json)
+
+
+def test_interactive_initial_stdin_bad_type():
+    json = {
+        'lang': 'python',
+        'source': 'print(42)',
+        'judge_source': 'import sys; sys.exit(0)',
+        'judge_lang': 'python',
+        'stdin_judge': 123,
+    }
+    with pytest.raises(camisole.schema.ValidationError):
+        camisole.schema.validate_run(json)

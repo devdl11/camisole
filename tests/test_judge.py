@@ -21,6 +21,8 @@
 Tests for interactive judge execution mode with proxy.
 """
 
+import sys
+
 import pytest
 from camisole.proxy import (
     InteractiveProxy, FirewallRules, ProxyErrorClass, 
@@ -172,6 +174,58 @@ async def test_proxy_judge_runtime_error():
     
     assert result.verdict == ProxyErrorClass.JUDGE_RUNTIME_ERROR
     assert result.judge_exit_code != 0
+
+
+@pytest.mark.asyncio
+async def test_proxy_initial_stdin_user():
+    """Initial stdin for user process is delivered before forwarding loop."""
+    proxy = InteractiveProxy(timeout=5.0)
+
+    user_cmd = [
+        sys.executable, '-c',
+        (
+            'import sys; '
+            'line = sys.stdin.readline(); '
+            'sys.exit(0 if line == "seed-user\\n" else 1)'
+        )
+    ]
+    judge_cmd = ['/bin/true']
+
+    result = await proxy.run(
+        user_cmd,
+        judge_cmd,
+        user_initial_stdin=b'seed-user\n',
+    )
+
+    assert result.verdict == ProxyErrorClass.PASS
+    assert result.user_exit_code == 0
+    assert result.judge_exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_proxy_initial_stdin_judge():
+    """Initial stdin for judge process is delivered before forwarding loop."""
+    proxy = InteractiveProxy(timeout=5.0)
+
+    user_cmd = ['/bin/true']
+    judge_cmd = [
+        sys.executable, '-c',
+        (
+            'import sys; '
+            'line = sys.stdin.readline(); '
+            'sys.exit(0 if line == "seed-judge\\n" else 1)'
+        )
+    ]
+
+    result = await proxy.run(
+        user_cmd,
+        judge_cmd,
+        judge_initial_stdin=b'seed-judge\n',
+    )
+
+    assert result.verdict == ProxyErrorClass.PASS
+    assert result.user_exit_code == 0
+    assert result.judge_exit_code == 0
 
 
 @pytest.mark.asyncio
