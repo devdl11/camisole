@@ -162,6 +162,7 @@ RUN_SCHEMA = {
     'lang': str,
     'source': str_bytes,
     'all_fatal': O(bool),
+    'debug_isolate': O(bool),
     'compile': O(ISOLATE_OPTS_PROPERTIES),
     'execute': O(EXECUTE_PROPERTIES),
     **JUDGE_REQUEST_PROPERTIES,  # request-level judge config

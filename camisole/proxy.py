@@ -228,6 +228,7 @@ class ProxyResult:
     total_user_bytes_sent: int = 0
     total_judge_bytes_sent: int = 0
     io_transcript: Optional[IOTranscript] = None
+    debug_isolate: Optional[Dict[str, Any]] = None
     resource_limit_exceeded: Optional[str] = None  # "user_time", "judge_memory", etc.
     error_message: str = ""
 
@@ -237,7 +238,7 @@ class ProxyResult:
         if self.io_transcript:
             transcript_data = self.io_transcript.rounds
 
-        return {
+        result = {
             'verdict': self.verdict.value,
             'user_crashed': self.user_crashed,
             'judge_crashed': self.judge_crashed,
@@ -255,6 +256,11 @@ class ProxyResult:
             'resource_limit_exceeded': self.resource_limit_exceeded,
             'error_message': self.error_message,
         }
+
+        if self.debug_isolate is not None:
+            result['debug_isolate'] = self.debug_isolate
+
+        return result
 
 
 class InteractiveProxy:
@@ -554,10 +560,10 @@ class InteractiveProxy:
         elif (self.judge_fault_exitcode is not None and
               judge_exit_code == self.judge_fault_exitcode):
             verdict = ProxyErrorClass.FAULT
-        elif judge_exit_code != 0:
-            verdict = ProxyErrorClass.JUDGE_RUNTIME_ERROR
         elif user_exit_code != 0:
             verdict = ProxyErrorClass.USER_RUNTIME_ERROR
+        elif judge_exit_code != 0:
+            verdict = ProxyErrorClass.JUDGE_RUNTIME_ERROR
 
         result = ProxyResult(
             verdict=verdict,

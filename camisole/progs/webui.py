@@ -350,6 +350,10 @@ HTML_PAGE = """<!doctype html>
             <input id="all_fatal" type="checkbox" />
             <span>all_fatal</span>
           </label>
+          <label class="checkbox" for="debug_isolate">
+            <input id="debug_isolate" type="checkbox" />
+            <span>debug_isolate (include isolate stdout/stderr)</span>
+          </label>
         </div>
 
         <div class="fieldset">
@@ -849,6 +853,11 @@ HTML_PAGE = """<!doctype html>
         const allFatal = document.getElementById("all_fatal").checked;
         if (allFatal) {
           payload.all_fatal = true;
+        }
+
+        const debugIsolate = document.getElementById("debug_isolate").checked;
+        if (debugIsolate) {
+          payload.debug_isolate = true;
         }
 
         const compileOpts = readIsolateOptions("compile_");

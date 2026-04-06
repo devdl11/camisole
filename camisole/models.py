@@ -223,6 +223,25 @@ class LangExecution:
                     else ''
             )
 
+    def _debug_isolate_details(self, isolator):
+        return {
+            'isolate_stdout': isolator.isolate_stdout,
+            'isolate_stderr': isolator.isolate_stderr,
+            'isolate_retcode': isolator.isolate_retcode,
+        }
+
+    def _maybe_add_debug_isolate(self, info, isolator):
+        if not self.opts.get('debug_isolate') or info is None:
+            return info
+
+        debug_info = self._debug_isolate_details(isolator)
+
+        if isinstance(info, dict):
+            info = {**info}
+            info['debug_isolate'] = debug_info
+
+        return info
+
 
     async def compile(self):
         if not self.df.compiler:
@@ -260,7 +279,7 @@ class LangExecution:
 
         root_tmp.cleanup()
 
-        return (isolator.isolate_retcode, isolator.info, binary)
+        return (isolator.isolate_retcode, self._maybe_add_debug_isolate(isolator.info, isolator), binary)
 
 
     async def execute(self, binary, opts=None):
@@ -290,7 +309,7 @@ class LangExecution:
                                 env=env, data=input_data
                             )
 
-        return (isolator.isolate_retcode, isolator.info)
+        return (isolator.isolate_retcode, self._maybe_add_debug_isolate(isolator.info, isolator))
 
 
     async def run_compilation(self, result):
@@ -929,6 +948,12 @@ class InteractiveLang(LangExecution):
                     # If isolate wrapper failed but program exit code is 0,
                     # normalize verdict to PASS.
                     proxy_result.verdict = camisole.proxy.ProxyErrorClass.PASS
+
+                if self.opts.get('debug_isolate'):
+                    proxy_result.debug_isolate = {
+                        'user': self._debug_isolate_details(user_isolator),
+                        'judge': self._debug_isolate_details(judge_isolator),
+                    }
 
                 return proxy_result
 
