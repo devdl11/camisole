@@ -165,6 +165,28 @@ class IOTranscript:
     """Transcript of I/O exchanges for verbose mode."""
     rounds: List[Dict[str, Any]] = field(default_factory=list)
 
+    def _ensure_round(self) -> Dict[str, Any]:
+        if not self.rounds:
+            self.rounds.append({
+                'round': 1,
+                'user_input': '',
+                'judge_output': '',
+                'firewall_violation': None,
+            })
+        return self.rounds[-1]
+
+    def add_user_input(self, user_input: bytes, firewall_violation: Optional[Dict] = None):
+        """Append user input to the current round."""
+        round_data = self._ensure_round()
+        round_data['user_input'] += user_input.decode('utf-8', errors='replace')
+        if firewall_violation is not None:
+            round_data['firewall_violation'] = firewall_violation
+
+    def add_judge_output(self, judge_output: bytes):
+        """Append judge output to the current round."""
+        round_data = self._ensure_round()
+        round_data['judge_output'] += judge_output.decode('utf-8', errors='replace')
+
     def add_round(self, round_num: int, user_input: bytes, judge_output: bytes, 
                   firewall_violation: Optional[Dict] = None):
         """Record a round of I/O exchange."""
@@ -411,6 +433,8 @@ class InteractiveProxy:
                 
                 if proc_info.name == "judge":
                     # Judge → User: transparent passthrough
+                    if self.transcript is not None:
+                        self.transcript.add_judge_output(data)
                     self.judge_output_buffer.extend(data)
                     self._write_to_process(self.user_proc, data)
                     self.total_judge_bytes_sent += len(data)
@@ -428,9 +452,13 @@ class InteractiveProxy:
                             # Stop execution
                             self.user_proc.proc.terminate()
                             self.judge_proc.proc.terminate()
+                            if self.transcript is not None:
+                                self.transcript.add_user_input(data, violation)
                             return
                         # else WARN: continue despite violation
                     
+                    if self.transcript is not None:
+                        self.transcript.add_user_input(data, violation)
                     self._write_to_process(self.judge_proc, data)
                     self.total_user_bytes_sent += len(data)
 
