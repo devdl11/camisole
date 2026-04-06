@@ -228,6 +228,7 @@ class LangExecution:
             'isolate_stdout': isolator.isolate_stdout,
             'isolate_stderr': isolator.isolate_stderr,
             'isolate_retcode': isolator.isolate_retcode,
+            'meta': isolator.meta,
         }
 
     def _maybe_add_debug_isolate(self, info, isolator):
@@ -936,6 +937,14 @@ class InteractiveLang(LangExecution):
                     fault_code is not None
                     and isinstance(proxy_result.judge_exit_code, int)
                     and proxy_result.judge_exit_code == fault_code
+                    and proxy_result.firewall_violation is None
+                ):
+                    proxy_result.verdict = camisole.proxy.ProxyErrorClass.FAULT
+                elif (
+                    proxy_result.verdict == camisole.proxy.ProxyErrorClass.JUDGE_RUNTIME_ERROR
+                    and isinstance(proxy_result.judge_exit_code, int)
+                    and proxy_result.judge_exit_code != 0
+                    and not proxy_result.judge_crashed
                     and proxy_result.firewall_violation is None
                 ):
                     proxy_result.verdict = camisole.proxy.ProxyErrorClass.FAULT
