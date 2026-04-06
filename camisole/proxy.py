@@ -28,6 +28,7 @@ Implements asymmetric I/O filtering:
 
 import asyncio
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any, Callable
@@ -164,28 +165,34 @@ class FirewallRules:
 class IOTranscript:
     """Transcript of I/O exchanges for verbose mode."""
     rounds: List[Dict[str, Any]] = field(default_factory=list)
-
-    def _ensure_round(self) -> Dict[str, Any]:
-        if not self.rounds:
-            self.rounds.append({
-                'round': 1,
-                'user_input': '',
-                'judge_output': '',
-                'firewall_violation': None,
-            })
-        return self.rounds[-1]
+    _pending_user_rounds: deque = field(default_factory=deque, init=False, repr=False)
 
     def add_user_input(self, user_input: bytes, firewall_violation: Optional[Dict] = None):
-        """Append user input to the current round."""
-        round_data = self._ensure_round()
-        round_data['user_input'] += user_input.decode('utf-8', errors='replace')
-        if firewall_violation is not None:
-            round_data['firewall_violation'] = firewall_violation
+        """Create one round entry for this user read chunk."""
+        self.rounds.append({
+            'round': len(self.rounds) + 1,
+            'user_input': user_input.decode('utf-8', errors='replace'),
+            'judge_output': '',
+            'firewall_violation': firewall_violation,
+        })
+        self._pending_user_rounds.append(len(self.rounds) - 1)
 
     def add_judge_output(self, judge_output: bytes):
-        """Append judge output to the current round."""
-        round_data = self._ensure_round()
-        round_data['judge_output'] += judge_output.decode('utf-8', errors='replace')
+        """Attach this judge read chunk to the oldest pending user round."""
+        output_text = judge_output.decode('utf-8', errors='replace')
+
+        if self._pending_user_rounds:
+            round_idx = self._pending_user_rounds.popleft()
+            self.rounds[round_idx]['judge_output'] += output_text
+            return
+
+        # Judge can sometimes emit output before any user data.
+        self.rounds.append({
+            'round': len(self.rounds) + 1,
+            'user_input': '',
+            'judge_output': output_text,
+            'firewall_violation': None,
+        })
 
     def add_round(self, round_num: int, user_input: bytes, judge_output: bytes, 
                   firewall_violation: Optional[Dict] = None):
