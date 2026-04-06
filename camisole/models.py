@@ -644,6 +644,7 @@ class InteractiveLang(LangExecution):
                     user_initial_stdin=user_initial_stdin,
                     judge_initial_stdin=judge_initial_stdin,
                     judge_fault_exitcode=self.opts.get('judge_fault_exitcode'),
+                    record_transcript=judge_cfg.get('io_transcript', False),
                 )
 
                 # Format result
@@ -722,7 +723,8 @@ class InteractiveLang(LangExecution):
                                              firewall_rules=None,
                                              user_initial_stdin=None,
                                              judge_initial_stdin=None,
-                                             judge_fault_exitcode=None):
+                                             judge_fault_exitcode=None,
+                                             record_transcript=False):
         """
         Run a single interactive test via proxy.
         
@@ -787,7 +789,7 @@ class InteractiveLang(LangExecution):
                 # Create proxy with firewall rules
                 proxy = camisole.proxy.InteractiveProxy(
                     firewall_rules=firewall_rules,
-                    record_transcript=judge_cfg.get('io_transcript', False),
+                    record_transcript=record_transcript,
                     timeout=30.0,  # can make configurable via opts
                     judge_fault_exitcode=judge_fault_exitcode,
                 )
