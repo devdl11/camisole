@@ -140,6 +140,7 @@ FIREWALL_PROPERTIES = {
 JUDGE_TEST_PROPERTIES = {
     'judge': O(bool),  # whether to use judge for this test
     'stdin_judge': O(str_bytes),
+    'io_transcript': O(bool),
     'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
     'judge_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for judge code
 }

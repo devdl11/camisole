@@ -658,7 +658,8 @@ HTML_PAGE = """<!doctype html>
           '<div class="mini-title shared-only">Per-test isolate options</div>' +
           '<div class="triple shared-only">' + isolateInputsHtml('t') + '</div>' +
             '<div class="split judge-only">' +
-            '<select class="f-action"><option value="STOP">firewall violation_action: STOP</option><option value="WARN">firewall violation_action: WARN</option></select>' +
+            '<select class="f-action"><option value="STOP">firewall violation_action: ERROR</option><option value="WARN">firewall violation_action: WARN</option></select>' +
+            '<label class="checkbox"><input type="checkbox" class="t-io-transcript" /><span>record io_transcript</span></label>' +
           '</div>' +
             '<div class="mini-title judge-only">firewall_rules</div>' +
             '<div class="split judge-only">' +
@@ -714,6 +715,7 @@ HTML_PAGE = """<!doctype html>
         const stdin = card.querySelector(".t-stdin").value;
         const expected = card.querySelector(".t-expected").value;
         const stdinJudge = card.querySelector(".t-stdin-judge").value;
+        const ioTranscript = card.querySelector(".t-io-transcript").checked;
         const fatal = card.querySelector(".t-fatal").checked;
         const judge = card.querySelector(".t-judge").checked;
 
@@ -759,7 +761,7 @@ HTML_PAGE = """<!doctype html>
             if (maxTotal) {
               firewall.max_total_bytes = parseNumericInput(maxTotal, true, "tests[].firewall.max_total_bytes");
             }
-            if (action && action !== "STOP") {
+            if (action) {
               firewall.violation_action = action;
             }
 
@@ -769,6 +771,10 @@ HTML_PAGE = """<!doctype html>
 
             if (stdinJudge) {
               judgeObject.stdin_judge = stdinJudge;
+            }
+
+            if (ioTranscript) {
+              judgeObject.io_transcript = true;
             }
 
             test.judge = judgeObject;

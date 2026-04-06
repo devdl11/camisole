@@ -787,7 +787,7 @@ class InteractiveLang(LangExecution):
                 # Create proxy with firewall rules
                 proxy = camisole.proxy.InteractiveProxy(
                     firewall_rules=firewall_rules,
-                    record_transcript=False,  # can make configurable
+                    record_transcript=judge_cfg.get('io_transcript', False),
                     timeout=30.0,  # can make configurable via opts
                     judge_fault_exitcode=judge_fault_exitcode,
                 )
