@@ -844,15 +844,34 @@ class InteractiveLang(LangExecution):
                 user_prog_exit = user_meta.get('exitcode')
                 judge_prog_exit = judge_meta.get('exitcode')
 
-                # Trust program exit codes when isolate status is OK or
-                # RUNTIME_ERROR.  RUNTIME_ERROR means the program exited with a
-                # non-zero code, and isolate records that exit code accurately in
-                # its meta file.  For other statuses (TIMED_OUT, SIGNALED,
-                # OUT_OF_MEMORY, INTERNAL_ERROR) isolate may write the default
-                # exitcode=0 placeholder, so those are not used.
-                if user_status in ('OK', 'RUNTIME_ERROR') and isinstance(user_prog_exit, int):
+                # Prefer sandboxed program exit codes from isolate metadata.
+                # In streaming interactive mode, the wrapper process may return
+                # a generic non-zero code (commonly 1) even when the sandboxed
+                # program's real exit code is available in meta (e.g. 42).
+                # Trust meta exit code when status is OK/RUNTIME_ERROR.
+                # Also accept a non-zero meta exit code as fallback for unknown
+                # statuses as long as isolate did not report timeout/oom/signal.
+                if (
+                    isinstance(user_prog_exit, int)
+                    and (
+                        user_status in ('OK', 'RUNTIME_ERROR')
+                        or (
+                            user_prog_exit != 0
+                            and user_status not in ('TIMED_OUT', 'OUT_OF_MEMORY', 'SIGNALED', 'INTERNAL_ERROR')
+                        )
+                    )
+                ):
                     proxy_result.user_exit_code = user_prog_exit
-                if judge_status in ('OK', 'RUNTIME_ERROR') and isinstance(judge_prog_exit, int):
+                if (
+                    isinstance(judge_prog_exit, int)
+                    and (
+                        judge_status in ('OK', 'RUNTIME_ERROR')
+                        or (
+                            judge_prog_exit != 0
+                            and judge_status not in ('TIMED_OUT', 'OUT_OF_MEMORY', 'SIGNALED', 'INTERNAL_ERROR')
+                        )
+                    )
+                ):
                     proxy_result.judge_exit_code = judge_prog_exit
 
                 user_exitsig = user_meta.get('exitsig')
@@ -864,11 +883,20 @@ class InteractiveLang(LangExecution):
                     proxy_result.judge_crashed = True
                     proxy_result.judge_signal = judge_exitsig
 
+                fault_code = None
+                if isinstance(judge_fault_exitcode, int):
+                    fault_code = judge_fault_exitcode
+                elif isinstance(judge_fault_exitcode, str):
+                    try:
+                        fault_code = int(judge_fault_exitcode)
+                    except ValueError:
+                        fault_code = None
+
                 # Honor custom judge fault code using real program exit code.
                 if (
-                    judge_fault_exitcode is not None
+                    fault_code is not None
                     and isinstance(proxy_result.judge_exit_code, int)
-                    and proxy_result.judge_exit_code == judge_fault_exitcode
+                    and proxy_result.judge_exit_code == fault_code
                     and proxy_result.firewall_violation is None
                 ):
                     proxy_result.verdict = camisole.proxy.ProxyErrorClass.FAULT
