@@ -331,15 +331,24 @@ class LangExecution:
                 **info
             }
 
-            expected_ok = True
+            test_failed = (retcode != 0)
             if test.get('expected') is not None:
                 expected_stdout = camisole.utils.force_bytes(test.get('expected'))
                 actual_stdout = info.get('stdout') if info is not None else b''
                 actual_stdout = actual_stdout if actual_stdout is not None else b''
                 expected_ok = (actual_stdout == expected_stdout)
-                result['tests'][i]['expected_ok'] = expected_ok
 
-            if (retcode != 0 or not expected_ok) and (
+                if retcode != 0:
+                    result['tests'][i]['verdict'] = 'FAILED'
+                    test_failed = True
+                elif expected_ok:
+                    result['tests'][i]['verdict'] = 'PASS'
+                    test_failed = False
+                else:
+                    result['tests'][i]['verdict'] = 'INVALID_OUTPUT'
+                    test_failed = True
+
+            if test_failed and (
                     test.get('fatal', False) or
                     self.opts.get('all_fatal', False)
                 ):
@@ -685,15 +694,24 @@ class InteractiveLang(LangExecution):
                     **info,
                 }
 
-                expected_ok = True
+                test_failed = (retcode != 0)
                 if test.get('expected') is not None:
                     expected_stdout = camisole.utils.force_bytes(test.get('expected'))
                     actual_stdout = info.get('stdout') if info is not None else b''
                     actual_stdout = actual_stdout if actual_stdout is not None else b''
                     expected_ok = (actual_stdout == expected_stdout)
-                    result['tests'][i]['expected_ok'] = expected_ok
 
-                if (retcode != 0 or not expected_ok) and (
+                    if retcode != 0:
+                        result['tests'][i]['verdict'] = 'FAILED'
+                        test_failed = True
+                    elif expected_ok:
+                        result['tests'][i]['verdict'] = 'PASS'
+                        test_failed = False
+                    else:
+                        result['tests'][i]['verdict'] = 'INVALID_OUTPUT'
+                        test_failed = True
+
+                if test_failed and (
                         test.get('fatal', False) or
                         self.opts.get('all_fatal', False)
                     ):
