@@ -331,7 +331,15 @@ class LangExecution:
                 **info
             }
 
-            if retcode != 0 and (
+            expected_ok = True
+            if test.get('expected') is not None:
+                expected_stdout = camisole.utils.force_bytes(test.get('expected'))
+                actual_stdout = info.get('stdout') if info is not None else b''
+                actual_stdout = actual_stdout if actual_stdout is not None else b''
+                expected_ok = (actual_stdout == expected_stdout)
+                result['tests'][i]['expected_ok'] = expected_ok
+
+            if (retcode != 0 or not expected_ok) and (
                     test.get('fatal', False) or
                     self.opts.get('all_fatal', False)
                 ):
@@ -578,15 +586,23 @@ class InteractiveLang(LangExecution):
             result['tests'] = [{}] * len(tests)
 
         for i, test in enumerate(tests):
-            # Prepare firewall rules if specified
+            judge_cfg = test.get('judge')
+            if isinstance(judge_cfg, bool):
+                judge_cfg = {'judge': judge_cfg}
+            elif not isinstance(judge_cfg, dict):
+                judge_cfg = {}
+
+            use_judge = judge_cfg.get('judge', True)
+
+            # Prepare firewall rules if specified for judge-enabled tests
             firewall_rules = None
-            if test.get('firewall_rules'):
+            if use_judge and judge_cfg.get('firewall_rules'):
                 firewall_rules = camisole.proxy.FirewallRules(
-                    allowed_chars=test['firewall_rules'].get('allowed_chars'),
-                    max_line_length=test['firewall_rules'].get('max_line_length'),
-                    max_total_bytes=test['firewall_rules'].get('max_total_bytes'),
-                    format_rules=test['firewall_rules'].get('format_rules', []),
-                    violation_action=test['firewall_rules'].get('violation_action', 'STOP'),
+                    allowed_chars=judge_cfg['firewall_rules'].get('allowed_chars'),
+                    max_line_length=judge_cfg['firewall_rules'].get('max_line_length'),
+                    max_total_bytes=judge_cfg['firewall_rules'].get('max_total_bytes'),
+                    format_rules=judge_cfg['firewall_rules'].get('format_rules', []),
+                    violation_action=judge_cfg['firewall_rules'].get('violation_action', 'STOP'),
                 )
 
             # Extract isolate options for user and judge.
@@ -600,61 +616,88 @@ class InteractiveLang(LangExecution):
                 'extra-time', 'fsize', 'mem', 'processes', 'quota', 'stack', 'time', 'virt-mem', 'wall-time'
             }
             judge_opts = {k: v for k, v in test.items() if k in isolate_option_keys}
-            judge_opts = {**judge_opts, **test.get('judge_execution', {})}
+            judge_opts = {**judge_opts, **judge_cfg.get('judge_execution', {})}
 
             # Initial stdin injection for interactive mode.
-            # Backward compatibility: legacy "stdin" maps to user initial stdin.
-            user_initial_stdin = (
-                test.get('stdin_user')
-                if test.get('stdin_user') is not None else
-                test.get('stdin')
-            )
+            user_initial_stdin = test.get('stdin')
             if user_initial_stdin is None:
                 execute_defaults = self.opts.get('execute', {})
-                user_initial_stdin = (
-                    execute_defaults.get('stdin_user')
-                    if execute_defaults.get('stdin_user') is not None else
-                    execute_defaults.get('stdin')
+                user_initial_stdin = execute_defaults.get('stdin')
+
+            if use_judge:
+                judge_initial_stdin = judge_cfg.get('stdin_judge')
+
+                # Run interactive test via proxy
+                proxy_result = await self._run_interactive_test_via_proxy(
+                    user_binary, user_opts,
+                    judge_binary, judge_opts,
+                    firewall_rules=firewall_rules,
+                    user_initial_stdin=user_initial_stdin,
+                    judge_initial_stdin=judge_initial_stdin,
+                    judge_fault_exitcode=self.opts.get('judge_fault_exitcode'),
                 )
-            if user_initial_stdin is None:
-                user_initial_stdin = self.opts.get('stdin_user')
 
-            judge_initial_stdin = (
-                test.get('stdin_judge')
-                if test.get('stdin_judge') is not None else None
-            )
-            if judge_initial_stdin is None:
-                execute_defaults = self.opts.get('execute', {})
-                judge_initial_stdin = execute_defaults.get('stdin_judge')
-            if judge_initial_stdin is None:
-                judge_initial_stdin = self.opts.get('stdin_judge')
+                # Format result
+                test_result = {
+                    'name': test.get('name', 'test{:03d}'.format(i)),
+                    **proxy_result.to_dict(),
+                }
 
-            # Run interactive test via proxy
-            proxy_result = await self._run_interactive_test_via_proxy(
-                user_binary, user_opts,
-                judge_binary, judge_opts,
-                firewall_rules=firewall_rules,
-                user_initial_stdin=user_initial_stdin,
-                judge_initial_stdin=judge_initial_stdin,
-                judge_fault_exitcode=test.get(
-                    'judge_fault_exitcode',
-                    self.opts.get('judge_fault_exitcode')
-                ),
-            )
+                expected_ok = True
+                if test.get('expected') is not None:
+                    expected_stdout = camisole.utils.force_bytes(test.get('expected'))
+                    actual_stdout = proxy_result.judge_output or b''
+                    expected_ok = (actual_stdout == expected_stdout)
+                    test_result['expected_ok'] = expected_ok
 
-            # Format result
-            test_result = {
-                'name': test.get('name', 'test{:03d}'.format(i)),
-                **proxy_result.to_dict(),
-            }
-            result['tests'][i] = test_result
+                    # With expected output configured, PASS means "judge output matches expected".
+                    if proxy_result.verdict == camisole.proxy.ProxyErrorClass.PASS:
+                        test_result['verdict'] = (
+                            camisole.proxy.ProxyErrorClass.PASS.value
+                            if expected_ok
+                            else camisole.proxy.ProxyErrorClass.FAULT.value
+                        )
+                else:
+                    # Without expected output, a successful judge run is reported as OK.
+                    if proxy_result.verdict == camisole.proxy.ProxyErrorClass.PASS:
+                        test_result['verdict'] = 'OK'
 
-            # Check if fatal
-            if proxy_result.verdict != camisole.proxy.ProxyErrorClass.PASS and (
-                    test.get('fatal', False) or
-                    self.opts.get('all_fatal', False)
-                ):
-                break
+                result['tests'][i] = test_result
+
+                # Check if fatal
+                current_verdict = result['tests'][i].get('verdict')
+                test_failed = current_verdict not in (
+                    camisole.proxy.ProxyErrorClass.PASS.value,
+                    'OK',
+                )
+                if test_failed and (
+                        test.get('fatal', False) or
+                        self.opts.get('all_fatal', False)
+                    ):
+                    break
+            else:
+                # This test explicitly disables judge: run normal user execution.
+                retcode, info = await self.execute(user_binary, user_opts)
+                assert info is not None
+
+                result['tests'][i] = {
+                    'name': test.get('name', 'test{:03d}'.format(i)),
+                    **info,
+                }
+
+                expected_ok = True
+                if test.get('expected') is not None:
+                    expected_stdout = camisole.utils.force_bytes(test.get('expected'))
+                    actual_stdout = info.get('stdout') if info is not None else b''
+                    actual_stdout = actual_stdout if actual_stdout is not None else b''
+                    expected_ok = (actual_stdout == expected_stdout)
+                    result['tests'][i]['expected_ok'] = expected_ok
+
+                if (retcode != 0 or not expected_ok) and (
+                        test.get('fatal', False) or
+                        self.opts.get('all_fatal', False)
+                    ):
+                    break
 
     async def _run_interactive_test_via_proxy(self, user_binary, user_opts,
                                              judge_binary, judge_opts,

@@ -124,14 +124,8 @@ JUDGE_REQUEST_PROPERTIES = {
     'judge_lang': O(str),          # judge program language
     'judge_compile': O(ISOLATE_OPTS_PROPERTIES),  # isolate options for judge compilation
     'judge_fault_exitcode': O(int),  # custom judge exit code meaning WRONG ANSWER / FAULT
-    'stdin_user': O(str_bytes),  # initial stdin injected into user process (interactive mode)
-    'stdin_judge': O(str_bytes),  # initial stdin injected into judge process (interactive mode)
 }
 
-# Test-level judge configuration (enables judge for a specific test)
-JUDGE_TEST_PROPERTIES = {
-    'judge': O(bool),  # enable judge mode for this test
-}
 
 # Firewall rules for user → judge I/O filtering
 FIREWALL_PROPERTIES = {
@@ -142,22 +136,25 @@ FIREWALL_PROPERTIES = {
     'violation_action': O(str),   # 'STOP' or 'WARN'
 }
 
-EXECUTE_PROPERTIES = {
-    'stdin': O(str_bytes),
-    'stdin_user': O(str_bytes),
+# Test-level judge configuration (enables judge for a specific test)
+JUDGE_TEST_PROPERTIES = {
+    'judge': O(bool),  # whether to use judge for this test
     'stdin_judge': O(str_bytes),
-    **JUDGE_TEST_PROPERTIES,  # test-level judge enable flag
+    'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
+    'judge_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for judge code
+}
+
+EXECUTE_PROPERTIES = {
     **ISOLATE_OPTS_PROPERTIES,
 }
 
 TEST_PROPERTIES = {
     'name': O(str),
     'fatal': O(bool),
-    **EXECUTE_PROPERTIES,
-    'judge_fault_exitcode': O(int),  # optional per-test override
-    'firewall_rules': O(FIREWALL_PROPERTIES),  # filtering rules for user → judge I/O
+    'stdin': O(str_bytes),
     'user_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for user code
-    'judge_execution': O(ISOLATE_OPTS_PROPERTIES),  # per-test isolate limits for judge code
+    'judge': O(JUDGE_TEST_PROPERTIES),
+    'expected': O(str_bytes),
 }
 
 RUN_SCHEMA = {

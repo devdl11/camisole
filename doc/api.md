@@ -67,8 +67,6 @@ The request body must be an object with the following fields.
 - `judge_lang` `string`: language of the judge program for interactive mode
 - `judge_compile` `object`: isolate options applied during judge compilation
 - `judge_fault_exitcode` `integer`: exit code that should be interpreted as `FAULT`
-- `stdin_user` `string | bytes`: initial input injected into the user process in interactive mode
-- `stdin_judge` `string | bytes`: initial input injected into the judge process in interactive mode
 
 ### Isolate options
 
@@ -84,31 +82,27 @@ The following isolate options are accepted in `compile`, `execute`, and per-test
 - `virt-mem` `integer`
 - `wall-time` `number`
 
-In addition, `execute` accepts interactive stdin defaults:
-
-- `stdin` `string | bytes`: backward-compatible alias for user initial stdin in interactive mode
-- `stdin_user` `string | bytes`: default initial stdin for user process
-- `stdin_judge` `string | bytes`: default initial stdin for judge process
-
 ### Test object fields
 
 Each element of `tests` can contain:
 
 - `name` `string`: test name, defaults to `test000`, `test001`, and so on
 - `stdin` `string | bytes`: standard input for the test
-- `stdin_user` `string | bytes`: initial input injected into user process for this test
-- `stdin_judge` `string | bytes`: initial input injected into judge process for this test
+- `expected` `string | bytes`: optional expected stdout for non-judge execution
 - `fatal` `boolean`: stop running later tests if this one fails
-- `judge` `boolean`: enable judge mode for this test
-- `judge_fault_exitcode` `integer`: per-test override for the judge fault exit code
-- `firewall_rules` `object`: I/O filtering rules for interactive mode
 - `user_execution` `object`: isolate options applied only to the user program
-- `judge_execution` `object`: isolate options applied only to the judge program
 - any isolate option listed above, used as a backward-compatible shorthand for execution limits
+
+Per-test judge configuration is nested in `judge`:
+
+- `judge.judge` `boolean`: enable/disable judge for this test
+- `judge.stdin_judge` `string | bytes`: initial input injected into judge process
+- `judge.firewall_rules` `object`: I/O filtering rules for interactive mode
+- `judge.judge_execution` `object`: isolate options applied only to judge execution
 
 ### Firewall rules
 
-`firewall_rules` accepts the following fields:
+`judge.firewall_rules` accepts the following fields:
 
 - `allowed_chars` `string`: regular expression for allowed characters
 - `max_line_length` `integer`: maximum bytes per line
