@@ -852,11 +852,10 @@ class InteractiveLang(LangExecution):
                     # Prefer that over a generic wrapper-like code.
                     msg = meta_obj.get('message')
                     if isinstance(msg, str) and status == 'RUNTIME_ERROR':
-                        m = re.search(r'(?i)(?:error\s+status|status|exit\s+code)\s+(-?\d+)', msg)
-                        if m is not None:
+                        matches = re.findall(r'(?<![\w.])-?\d+(?![\w.])', msg)
+                        if matches:
                             try:
-                                parsed = int(m.group(1))
-                                return parsed
+                                return int(matches[-1])
                             except ValueError:
                                 pass
 
