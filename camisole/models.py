@@ -841,8 +841,29 @@ class InteractiveLang(LangExecution):
                         proxy_result.verdict = camisole.proxy.ProxyErrorClass.RESOURCE_LIMIT_EXCEEDED
                         proxy_result.resource_limit_exceeded = 'judge_memory'
 
-                user_prog_exit = user_meta.get('exitcode')
-                judge_prog_exit = judge_meta.get('exitcode')
+                def _extract_exit_from_meta(meta_obj, status):
+                    """Best-effort extraction of sandboxed program exit code from isolate meta."""
+                    code = meta_obj.get('exitcode')
+                    if not isinstance(code, int):
+                        code = None
+
+                    # For runtime errors, isolate message may contain the real
+                    # program status (e.g. "Exited with error status 42").
+                    # Prefer that over a generic wrapper-like code.
+                    msg = meta_obj.get('message')
+                    if isinstance(msg, str) and status == 'RUNTIME_ERROR':
+                        m = re.search(r'(?i)(?:error\s+status|status|exit\s+code)\s+(-?\d+)', msg)
+                        if m is not None:
+                            try:
+                                parsed = int(m.group(1))
+                                return parsed
+                            except ValueError:
+                                pass
+
+                    return code
+
+                user_prog_exit = _extract_exit_from_meta(user_meta, user_status)
+                judge_prog_exit = _extract_exit_from_meta(judge_meta, judge_status)
 
                 # Prefer sandboxed program exit codes from isolate metadata.
                 # In streaming interactive mode, the wrapper process may return
