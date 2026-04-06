@@ -371,11 +371,12 @@ class InteractiveProxy:
 
     async def _forward_io(self):
         """Forward I/O between user and judge processes concurrently."""
-        user_reader = judge_reader = None
+        user_reader = judge_reader = judge_waiter = None
         try:
             # Create concurrent tasks for reading from both processes
             user_reader = asyncio.create_task(self._read_process_stream(self.user_proc))
             judge_reader = asyncio.create_task(self._read_process_stream(self.judge_proc))
+            judge_waiter = asyncio.create_task(self.judge_proc.proc.wait())
 
             # When a process's stdout reaches EOF (it is done writing), signal
             # the *other* process that no more data is coming by closing its
@@ -387,8 +388,19 @@ class InteractiveProxy:
                         not proc_info.proc.stdin.is_closing()):
                     proc_info.proc.stdin.close()
 
+            def _terminate_user_if_running(_):
+                if (
+                    self.user_proc
+                    and self.user_proc.proc.returncode is None
+                ):
+                    try:
+                        self.user_proc.proc.terminate()
+                    except ProcessLookupError:
+                        pass
+
             user_reader.add_done_callback(lambda _: _close_stdin(self.judge_proc))
             judge_reader.add_done_callback(lambda _: _close_stdin(self.user_proc))
+            judge_waiter.add_done_callback(_terminate_user_if_running)
 
             # Wait for both readers to complete (END OF STREAM)
             await asyncio.gather(user_reader, judge_reader, return_exceptions=True)
@@ -396,7 +408,7 @@ class InteractiveProxy:
             # Now wait for both processes to exit
             await asyncio.gather(
                 self.user_proc.proc.wait(),
-                self.judge_proc.proc.wait(),
+                judge_waiter,
                 return_exceptions=True
             )
 
@@ -411,6 +423,8 @@ class InteractiveProxy:
                 user_reader.cancel()
             if judge_reader is not None:
                 judge_reader.cancel()
+            if judge_waiter is not None:
+                judge_waiter.cancel()
             raise
         except Exception as e:
             logger.exception(f"I/O forwarding error: {e}")

@@ -224,10 +224,14 @@ class LangExecution:
             )
 
     def _debug_isolate_details(self, isolator):
+        isolate_retcode = isolator.isolate_retcode
+        if isolate_retcode is None and isolator.meta is not None:
+            isolate_retcode = isolator.meta.get('exitcode')
+
         return {
             'isolate_stdout': isolator.isolate_stdout,
             'isolate_stderr': isolator.isolate_stderr,
-            'isolate_retcode': isolator.isolate_retcode,
+            'isolate_retcode': isolate_retcode,
             'meta': isolator.meta,
         }
 
@@ -940,6 +944,15 @@ class InteractiveLang(LangExecution):
                     and proxy_result.firewall_violation is None
                 ):
                     proxy_result.verdict = camisole.proxy.ProxyErrorClass.FAULT
+                elif (
+                    proxy_result.firewall_violation is None
+                    and isinstance(proxy_result.judge_exit_code, int)
+                    and proxy_result.judge_exit_code == 0
+                    and judge_status == 'OK'
+                ):
+                    # A judge that exits successfully defines the test result;
+                    # do not turn a late user EOF/runtime error into a failure.
+                    proxy_result.verdict = camisole.proxy.ProxyErrorClass.PASS
                 elif (
                     proxy_result.verdict == camisole.proxy.ProxyErrorClass.JUDGE_RUNTIME_ERROR
                     and isinstance(proxy_result.judge_exit_code, int)
